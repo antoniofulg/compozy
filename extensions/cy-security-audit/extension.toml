@@ -1,0 +1,23 @@
+[extension]
+name = "cy-security-audit"
+version = "0.1.0"
+description = "On-demand application-security audit of AI-written code, plus a post-run reminder to run it"
+min_compozy_version = "0.2.11"
+
+[subprocess]
+command = "go"
+args = ["run", "."]
+
+[security]
+capabilities = ["skills.ship", "run.mutate"]
+
+[resources]
+skills = ["skills/*"]
+
+[[hooks]]
+event = "run.post_start"
+required = false
+
+[[hooks]]
+event = "run.post_shutdown"
+required = false
