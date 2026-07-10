@@ -201,3 +201,106 @@ func TestMutateSessionRequestSetsClaudeEffortForQAReport(t *testing.T) {
 		t.Fatalf("KEEP = %q, want value", got)
 	}
 }
+
+func TestRuntimeForTaskHonorsEnvOverrides(t *testing.T) {
+	reportTask := extension.TaskRuntimeTask{
+		Title: "Demo QA plan and regression artifacts",
+		Type:  qaReportTaskType,
+	}
+	executionTask := extension.TaskRuntimeTask{
+		Title: "Demo QA execution and operator-flow validation",
+		Type:  qaExecutionTaskType,
+	}
+
+	tests := []struct {
+		name       string
+		env        map[string]string
+		task       extension.TaskRuntimeTask
+		wantIDE    string
+		wantModel  string
+		wantEffort string
+	}{
+		{
+			name:       "execution defaults when unset",
+			task:       executionTask,
+			wantIDE:    defaultQAExecutionIDE,
+			wantModel:  defaultQAExecutionModel,
+			wantEffort: defaultReasoningEffort,
+		},
+		{
+			name:       "execution IDE override drops the default model",
+			env:        map[string]string{qaExecutionIDEEnv: "claude"},
+			task:       executionTask,
+			wantIDE:    "claude",
+			wantModel:  "",
+			wantEffort: defaultReasoningEffort,
+		},
+		{
+			name:       "execution IDE and model override",
+			env:        map[string]string{qaExecutionIDEEnv: "claude", qaExecutionModelEnv: "opus"},
+			task:       executionTask,
+			wantIDE:    "claude",
+			wantModel:  "opus",
+			wantEffort: defaultReasoningEffort,
+		},
+		{
+			name:       "execution model override keeps default IDE",
+			env:        map[string]string{qaExecutionModelEnv: "custom-model"},
+			task:       executionTask,
+			wantIDE:    defaultQAExecutionIDE,
+			wantModel:  "custom-model",
+			wantEffort: defaultReasoningEffort,
+		},
+		{
+			name:       "execution reasoning effort override",
+			env:        map[string]string{qaExecutionEffortEnv: "medium"},
+			task:       executionTask,
+			wantIDE:    defaultQAExecutionIDE,
+			wantModel:  defaultQAExecutionModel,
+			wantEffort: "medium",
+		},
+		{
+			name:       "report defaults when unset",
+			task:       reportTask,
+			wantIDE:    defaultQAReportIDE,
+			wantModel:  defaultQAReportModel,
+			wantEffort: defaultReasoningEffort,
+		},
+		{
+			name:       "report IDE override drops the default model",
+			env:        map[string]string{qaReportIDEEnv: "codex"},
+			task:       reportTask,
+			wantIDE:    "codex",
+			wantModel:  "",
+			wantEffort: defaultReasoningEffort,
+		},
+		{
+			name:       "blank env value falls back to default",
+			env:        map[string]string{qaExecutionIDEEnv: "   "},
+			task:       executionTask,
+			wantIDE:    defaultQAExecutionIDE,
+			wantModel:  defaultQAExecutionModel,
+			wantEffort: defaultReasoningEffort,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// t.Setenv restores the environment after each subtest, so cases
+			// with an empty env map observe the compiled-in defaults.
+			for key, value := range tt.env {
+				t.Setenv(key, value)
+			}
+			got, ok := runtimeForTask(tt.task)
+			if !ok {
+				t.Fatalf("runtimeForTask(%q) ok = false, want true", tt.task.Title)
+			}
+			if got.IDE != tt.wantIDE || got.Model != tt.wantModel || got.ReasoningEffort != tt.wantEffort {
+				t.Fatalf(
+					"runtimeForTask() = {IDE:%q Model:%q Effort:%q}, want {IDE:%q Model:%q Effort:%q}",
+					got.IDE, got.Model, got.ReasoningEffort, tt.wantIDE, tt.wantModel, tt.wantEffort,
+				)
+			}
+		})
+	}
+}

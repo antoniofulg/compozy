@@ -1,6 +1,6 @@
 [extension]
 name = "cy-qa-workflow"
-version = "0.1.0"
+version = "0.2.0"
 description = "Adds Compozy QA report and QA execution tasks to workflow runs"
 min_compozy_version = "0.2.14"
 

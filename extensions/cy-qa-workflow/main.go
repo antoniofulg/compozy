@@ -12,17 +12,29 @@ import (
 
 const (
 	extensionName    = "cy-qa-workflow"
-	extensionVersion = "0.1.0"
+	extensionVersion = "0.2.0"
 
 	reportMarker    = "<!-- compozy-qa-workflow:qa-report -->"
 	executionMarker = "<!-- compozy-qa-workflow:qa-execution -->"
 
-	defaultQAReportIDE       = "claude"
-	defaultQAReportModel     = "opus"
-	defaultQAExecutionIDE    = "codex"
-	defaultQAExecutionModel  = "gpt-5.6-sol"
-	defaultReasoningEffort   = "xhigh"
-	claudeEffortEnv          = "CLAUDE_CODE_EFFORT_LEVEL"
+	defaultQAReportIDE      = "claude"
+	defaultQAReportModel    = "opus"
+	defaultQAExecutionIDE   = "codex"
+	defaultQAExecutionModel = "gpt-5.6-sol"
+	defaultReasoningEffort  = "xhigh"
+	claudeEffortEnv         = "CLAUDE_CODE_EFFORT_LEVEL"
+
+	// QA runtime override env vars. When unset, the compiled-in defaults above
+	// apply, so existing installs are unaffected. Set these (e.g. via the
+	// extension.toml [subprocess.env] table) to run the QA tasks on a different
+	// IDE/model — for example to run the QA execution on claude when codex is
+	// unavailable.
+	qaReportIDEEnv           = "CY_QA_REPORT_IDE"
+	qaReportModelEnv         = "CY_QA_REPORT_MODEL"
+	qaReportEffortEnv        = "CY_QA_REPORT_REASONING_EFFORT"
+	qaExecutionIDEEnv        = "CY_QA_EXECUTION_IDE"
+	qaExecutionModelEnv      = "CY_QA_EXECUTION_MODEL"
+	qaExecutionEffortEnv     = "CY_QA_EXECUTION_REASONING_EFFORT"
 	qaReportTaskType         = "docs"
 	qaExecutionTaskType      = "test"
 	qaReportComplexity       = "high"
@@ -265,20 +277,46 @@ func handlePlanPreResolveTaskRuntime(
 func runtimeForTask(task extension.TaskRuntimeTask) (extension.TaskRuntime, bool) {
 	switch {
 	case isQAReportRuntimeTask(task):
-		return extension.TaskRuntime{
-			IDE:             defaultQAReportIDE,
-			Model:           defaultQAReportModel,
-			ReasoningEffort: defaultReasoningEffort,
-		}, true
+		return resolveQARuntime(
+			qaReportIDEEnv, defaultQAReportIDE,
+			qaReportModelEnv, defaultQAReportModel,
+			qaReportEffortEnv,
+		), true
 	case isQAExecutionRuntimeTask(task):
-		return extension.TaskRuntime{
-			IDE:             defaultQAExecutionIDE,
-			Model:           defaultQAExecutionModel,
-			ReasoningEffort: defaultReasoningEffort,
-		}, true
+		return resolveQARuntime(
+			qaExecutionIDEEnv, defaultQAExecutionIDE,
+			qaExecutionModelEnv, defaultQAExecutionModel,
+			qaExecutionEffortEnv,
+		), true
 	default:
 		return extension.TaskRuntime{}, false
 	}
+}
+
+// resolveQARuntime builds a QA task runtime, letting env vars override the
+// compiled-in defaults. When the IDE is overridden but no model is given, the
+// model is left empty so the daemon picks the chosen IDE's default model; the
+// compiled-in default model only applies while the IDE is unchanged (otherwise
+// switching IDE would carry over an incompatible model).
+func resolveQARuntime(ideEnv, defaultIDE, modelEnv, defaultModel, effortEnv string) extension.TaskRuntime {
+	ide := envOr(ideEnv, defaultIDE)
+	model := strings.TrimSpace(os.Getenv(modelEnv))
+	if model == "" && ide == defaultIDE {
+		model = defaultModel
+	}
+	return extension.TaskRuntime{
+		IDE:             ide,
+		Model:           model,
+		ReasoningEffort: envOr(effortEnv, defaultReasoningEffort),
+	}
+}
+
+// envOr returns the trimmed value of the env var key, or fallback when unset or blank.
+func envOr(key, fallback string) string {
+	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+		return value
+	}
+	return fallback
 }
 
 func handleAgentPreSessionCreate(
