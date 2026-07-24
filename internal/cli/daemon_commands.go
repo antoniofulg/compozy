@@ -88,6 +88,7 @@ type daemonCommandClient interface {
 		apicore.RunJobMessageRequest,
 	) (apicore.RunJobControlResponse, error)
 	GetRunSnapshot(context.Context, string) (apicore.RunSnapshot, error)
+	GetConvergenceSnapshot(context.Context, string) (contract.ConvergenceSnapshot, error)
 	ListRunEvents(context.Context, string, apicore.StreamCursor, int) (apicore.RunEventPage, error)
 	OpenRunStream(context.Context, string, apicore.StreamCursor) (apiclient.RunStream, error)
 }

@@ -75,6 +75,7 @@ func registerRunRoutes(api gin.IRouter, handlers *Handlers) {
 	runs.GET("", handlers.ListRuns)
 	runs.GET("/:run_id", handlers.GetRun)
 	runs.GET("/:run_id/snapshot", handlers.GetRunSnapshot)
+	runs.GET("/:run_id/convergence/snapshot", handlers.GetConvergenceSnapshot)
 	runs.GET("/:run_id/transcript", handlers.GetRunTranscript)
 	runs.GET("/:run_id/events", handlers.ListRunEvents)
 	runs.GET("/:run_id/stream", handlers.StreamRun)

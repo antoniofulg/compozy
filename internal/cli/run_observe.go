@@ -12,6 +12,7 @@ import (
 	"time"
 
 	apiclient "github.com/compozy/compozy/internal/api/client"
+	"github.com/compozy/compozy/internal/api/contract"
 	apicore "github.com/compozy/compozy/internal/api/core"
 	uipkg "github.com/compozy/compozy/internal/core/run/ui"
 	eventspkg "github.com/compozy/compozy/pkg/compozy/events"
@@ -26,6 +27,7 @@ var (
 	openCLIRemoteUISession         = uipkg.AttachRemote
 	openCLIRemoteMultiRunUISession = uipkg.AttachRemoteMultiple
 	openCLIRemoteReviewWatchUI     = uipkg.AttachRemoteReviewWatch
+	openCLIRemoteConvergenceUI     = uipkg.AttachRemoteConvergence
 )
 
 var errRunSettledBeforeUIAttach = errors.New("run settled before ui attach")
@@ -36,6 +38,7 @@ const (
 	defaultOwnedRunCancelTimeout        = 5 * time.Second
 	daemonRunModeTaskMulti              = "task_multi"
 	daemonRunModeReviewWatch            = "review_watch"
+	daemonRunModeConvergence            = "convergence"
 )
 
 type cliRunObserveConfig struct {
@@ -140,6 +143,9 @@ func attachRemoteCLIRunUI(
 	if isReviewWatchRunSnapshot(snapshot) {
 		return attachRemoteCLIReviewWatchUI(ctx, client, trimmedRunID, snapshot, cancelOwnedRunOnExit, cfg)
 	}
+	if isConvergenceRunSnapshot(snapshot) {
+		return attachRemoteCLIConvergenceUI(ctx, client, trimmedRunID, snapshot, cancelOwnedRunOnExit, cfg)
+	}
 	if runSnapshotSettledBeforeUIAttach(snapshot) {
 		return errRunSettledBeforeUIAttach
 	}
@@ -210,6 +216,50 @@ func isTaskMultiRunSnapshot(snapshot apicore.RunSnapshot) bool {
 
 func isReviewWatchRunSnapshot(snapshot apicore.RunSnapshot) bool {
 	return snapshot.Run.Mode == daemonRunModeReviewWatch
+}
+
+func isConvergenceRunSnapshot(snapshot apicore.RunSnapshot) bool {
+	return snapshot.Run.Mode == daemonRunModeConvergence
+}
+
+func attachRemoteCLIConvergenceUI(
+	ctx context.Context,
+	client daemonCommandClient,
+	runID string,
+	snapshot apicore.RunSnapshot,
+	cancelOwnedRunOnExit bool,
+	cfg cliRunObserveConfig,
+) error {
+	workspaceRoot, err := remoteUIWorkspaceRoot(ctx, client, snapshot.Run)
+	if err != nil {
+		return err
+	}
+	opts := uipkg.RemoteConvergenceAttachOptions{
+		Snapshot:      snapshot,
+		WorkspaceRoot: workspaceRoot,
+		OwnerSession:  cancelOwnedRunOnExit,
+		LoadRunSnapshot: func(loadCtx context.Context) (apicore.RunSnapshot, error) {
+			return client.GetRunSnapshot(loadCtx, runID)
+		},
+		LoadConvergence: func(loadCtx context.Context) (contract.ConvergenceSnapshot, error) {
+			return client.GetConvergenceSnapshot(loadCtx, runID)
+		},
+		OpenStream: func(streamCtx context.Context, after apicore.StreamCursor) (apiclient.RunStream, error) {
+			return client.OpenRunStream(streamCtx, runID, after)
+		},
+		Cancel: func(cancelCtx context.Context) error {
+			return client.CancelRun(cancelCtx, runID)
+		},
+	}
+	if convergence, convErr := client.GetConvergenceSnapshot(ctx, runID); convErr == nil {
+		opts.Convergence = convergence
+		opts.HasConvergence = true
+	}
+	session, err := openCLIRemoteConvergenceUI(ctx, opts)
+	if err != nil {
+		return err
+	}
+	return waitRemoteCLIRunUI(ctx, client, runID, session, cancelOwnedRunOnExit, cfg.ownedRunCancelTimeout)
 }
 
 func remoteUIWorkspaceRoot(ctx context.Context, client daemonCommandClient, run apicore.Run) (string, error) {

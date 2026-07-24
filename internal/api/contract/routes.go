@@ -187,6 +187,12 @@ var RouteInventory = []RouteSpec{
 	},
 	{
 		Method:       http.MethodGet,
+		Path:         "/api/runs/:run_id/convergence/snapshot",
+		ResponseType: "ConvergenceSnapshotResponse",
+		TimeoutClass: TimeoutRead,
+	},
+	{
+		Method:       http.MethodGet,
 		Path:         "/api/runs/:run_id/transcript",
 		ResponseType: "RunTranscriptResponse",
 		TimeoutClass: TimeoutRead,

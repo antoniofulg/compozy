@@ -27,6 +27,7 @@ type HandlerConfig struct {
 	Tasks           TaskService
 	Reviews         ReviewService
 	Runs            RunService
+	Convergence     ConvergenceService
 	Sync            SyncService
 	Exec            ExecService
 }
@@ -97,6 +98,13 @@ type RunService interface {
 	Cancel(context.Context, string) error
 	PauseRunJob(context.Context, string, string) (RunJobControlResponse, error)
 	SendRunJobMessage(context.Context, string, string, RunJobMessageRequest) (RunJobControlResponse, error)
+}
+
+// ConvergenceService exposes the bounded, versioned convergence snapshot read
+// model for one convergence run. It is additive to RunService so existing run
+// clients and mocks are unaffected.
+type ConvergenceService interface {
+	ConvergenceSnapshot(context.Context, string) (contract.ConvergenceSnapshotResponse, error)
 }
 
 // SyncService exposes explicit workflow reconciliation.

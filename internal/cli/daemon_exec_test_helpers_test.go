@@ -12,6 +12,7 @@ import (
 	"time"
 
 	apiclient "github.com/compozy/compozy/internal/api/client"
+	"github.com/compozy/compozy/internal/api/contract"
 	apicore "github.com/compozy/compozy/internal/api/core"
 	compozyconfig "github.com/compozy/compozy/internal/config"
 	corepkg "github.com/compozy/compozy/internal/core"
@@ -497,6 +498,17 @@ func (c *inProcessDaemonCommandClient) StartExecRun(
 
 func (c *inProcessDaemonCommandClient) GetRunSnapshot(ctx context.Context, runID string) (apicore.RunSnapshot, error) {
 	return c.manager.Snapshot(ctx, runID)
+}
+
+func (c *inProcessDaemonCommandClient) GetConvergenceSnapshot(
+	ctx context.Context,
+	runID string,
+) (contract.ConvergenceSnapshot, error) {
+	response, err := c.manager.ConvergenceSnapshot(ctx, runID)
+	if err != nil {
+		return contract.ConvergenceSnapshot{}, err
+	}
+	return response.Convergence, nil
 }
 
 func (c *inProcessDaemonCommandClient) ListRunEvents(

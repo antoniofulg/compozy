@@ -314,6 +314,7 @@ func buildHostHandlers(
 		Tasks:           newTransportTaskService(persistence.db, runManager, queryService),
 		Reviews:         newTransportReviewService(persistence.db, runManager, queryService),
 		Runs:            runManager,
+		Convergence:     runManager,
 		Sync:            newTransportSyncService(persistence.db, runManager),
 		Exec:            newTransportExecService(runManager),
 		WorkspaceEvents: runManager,

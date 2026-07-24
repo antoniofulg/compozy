@@ -29,16 +29,17 @@ var openAPIOperationMethods = map[string]struct{}{
 }
 
 var browserRouteExclusions = map[string]struct{}{
-	"DELETE /api/workspaces/{id}":     {},
-	"GET /api/runs/{run_id}/events":   {},
-	"GET /api/tasks/{slug}/items":     {},
-	"GET /api/workspaces/{id}":        {},
-	"PATCH /api/workspaces/{id}":      {},
-	"POST /api/daemon/stop":           {},
-	"POST /api/exec":                  {},
-	"POST /api/reviews/{slug}/fetch":  {},
-	"POST /api/tasks/{slug}/validate": {},
-	"POST /api/workspaces":            {},
+	"DELETE /api/workspaces/{id}":                 {},
+	"GET /api/runs/{run_id}/convergence/snapshot": {},
+	"GET /api/runs/{run_id}/events":               {},
+	"GET /api/tasks/{slug}/items":                 {},
+	"GET /api/workspaces/{id}":                    {},
+	"PATCH /api/workspaces/{id}":                  {},
+	"POST /api/daemon/stop":                       {},
+	"POST /api/exec":                              {},
+	"POST /api/reviews/{slug}/fetch":              {},
+	"POST /api/tasks/{slug}/validate":             {},
+	"POST /api/workspaces":                        {},
 }
 
 func TestBrowserOpenAPIContractMatchesRegisteredBrowserRoutes(t *testing.T) {

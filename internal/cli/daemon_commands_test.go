@@ -117,6 +117,7 @@ type stubDaemonCommandClient struct {
 	snapshot             apicore.RunSnapshot
 	snapshotErr          error
 	snapshotFunc         func(context.Context, string) (apicore.RunSnapshot, error)
+	convergenceFunc      func(context.Context, string) (contract.ConvergenceSnapshot, error)
 	stream               apiclient.RunStream
 	streamErr            error
 }
@@ -502,6 +503,19 @@ func (c *stubDaemonCommandClient) GetRunSnapshot(ctx context.Context, runID stri
 		return apicore.RunSnapshot{}, c.snapshotErr
 	}
 	return c.snapshot, nil
+}
+
+func (c *stubDaemonCommandClient) GetConvergenceSnapshot(
+	ctx context.Context,
+	runID string,
+) (contract.ConvergenceSnapshot, error) {
+	if c == nil {
+		return contract.ConvergenceSnapshot{}, errors.New("stub daemon client is required")
+	}
+	if c.convergenceFunc != nil {
+		return c.convergenceFunc(ctx, runID)
+	}
+	return contract.ConvergenceSnapshot{}, nil
 }
 
 func (c *stubDaemonCommandClient) ListRunEvents(

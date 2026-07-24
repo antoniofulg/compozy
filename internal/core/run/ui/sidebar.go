@@ -12,6 +12,9 @@ import (
 
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
+// jobParkedTimeLabel is the sidebar time-column label for a parked job.
+const jobParkedTimeLabel = "parked"
+
 // renderSidebar draws the JOBS panel: a title followed by a stack of bordered job
 // cards. The panel border stays muted regardless of focus so the only accent in
 // the panel is the selected card. The panel carries no inner horizontal padding,
@@ -375,7 +378,7 @@ func (m *uiModel) sidebarTimeString(job *uiJob) string {
 	case jobRetrying:
 		return m.retryAttemptLabel(job)
 	case jobParked:
-		return "parked"
+		return jobParkedTimeLabel
 	case jobSuccess, jobFailed:
 		if d := m.jobElapsedDuration(job); d > 0 {
 			return formatDuration(d)

@@ -264,6 +264,33 @@ func (c *Client) GetRunSnapshot(ctx context.Context, runID string) (apicore.RunS
 	return snapshot, nil
 }
 
+// GetConvergenceSnapshot loads the bounded, versioned convergence snapshot for one
+// convergence run. It is a dedicated read model, not the generic run snapshot.
+func (c *Client) GetConvergenceSnapshot(
+	ctx context.Context,
+	runID string,
+) (contract.ConvergenceSnapshot, error) {
+	if c == nil {
+		return contract.ConvergenceSnapshot{}, ErrDaemonClientRequired
+	}
+
+	trimmedRunID := strings.TrimSpace(runID)
+	if trimmedRunID == "" {
+		return contract.ConvergenceSnapshot{}, ErrRunIDRequired
+	}
+
+	var payload contract.ConvergenceSnapshotResponse
+	path := "/api/runs/" + url.PathEscape(trimmedRunID) + "/convergence/snapshot"
+	if _, err := c.doJSON(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return contract.ConvergenceSnapshot{}, fmt.Errorf(
+			"failed to fetch convergence snapshot for run %s: %w",
+			trimmedRunID,
+			err,
+		)
+	}
+	return payload.Convergence, nil
+}
+
 // GetTaskRunMultipleSnapshot loads the ordered child-state snapshot for a daemon-owned multi-run parent.
 func (c *Client) GetTaskRunMultipleSnapshot(
 	ctx context.Context,

@@ -45,6 +45,7 @@ type Handlers struct {
 	Tasks           TaskService
 	Reviews         ReviewService
 	Runs            RunService
+	Convergence     ConvergenceService
 	Sync            SyncService
 	Exec            ExecService
 
@@ -94,6 +95,7 @@ func NewHandlers(cfg *HandlerConfig) *Handlers {
 		Tasks:                         cfg.Tasks,
 		Reviews:                       cfg.Reviews,
 		Runs:                          cfg.Runs,
+		Convergence:                   cfg.Convergence,
 		Sync:                          cfg.Sync,
 		Exec:                          cfg.Exec,
 		streamDone:                    done,
@@ -121,6 +123,7 @@ func (h *Handlers) Clone() *Handlers {
 		Tasks:                         h.Tasks,
 		Reviews:                       h.Reviews,
 		Runs:                          h.Runs,
+		Convergence:                   h.Convergence,
 		Sync:                          h.Sync,
 		Exec:                          h.Exec,
 	})
@@ -1433,6 +1436,23 @@ func (h *Handlers) GetRunSnapshot(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, contract.RunSnapshotResponseFromSnapshot(snapshot))
+}
+
+// GetConvergenceSnapshot returns the bounded, versioned convergence snapshot for
+// one convergence run. It is a dedicated read model, not a task-job snapshot.
+func (h *Handlers) GetConvergenceSnapshot(c *gin.Context) {
+	if h.Convergence == nil {
+		h.respondError(c, serviceUnavailableProblem("convergence service"))
+		return
+	}
+
+	snapshot, err := h.Convergence.ConvergenceSnapshot(c.Request.Context(), c.Param("run_id"))
+	if err != nil {
+		h.respondError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, snapshot)
 }
 
 // GetRunTranscript returns the canonical structured transcript for one run.
