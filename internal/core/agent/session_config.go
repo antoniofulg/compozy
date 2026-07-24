@@ -178,6 +178,20 @@ func (c *clientImpl) configureSessionMode(
 	if modeID == "" {
 		return nil
 	}
+	if isReadOnlyAccessMode(c.cfg.AccessMode) && modes != nil && !sessionModeAvailable(modes, modeID) {
+		// Read-only session mode is best-effort: the Compozy ACP file, terminal,
+		// and permission boundary is the primary enforcement, so an adapter that
+		// does not advertise a read-only mode is still contained. Skip rather than
+		// fail the reviewer session.
+		if c.logger != nil {
+			c.logger.Debug(
+				"adapter does not advertise a read-only session mode; relying on runtime boundary",
+				"ide", c.spec.ID,
+				"requested_mode", modeID,
+			)
+		}
+		return nil
+	}
 	if isClaudeFableModel(c.spec, effectiveModel) && c.cfg.AccessMode == model.AccessModeFull && c.logger != nil {
 		c.logger.Info(
 			"using Claude auto permission mode required by Fable 5",
@@ -344,6 +358,11 @@ func sessionSelectValues(option *acp.SessionConfigOptionSelect) []acp.SessionCon
 }
 
 func sessionModeForModelAccess(spec Spec, modelName string, accessMode string) string {
+	// Read-only review must resolve to the adapter's read-only mode (or none),
+	// never the Fable auto permission mode, which would relax authority.
+	if isReadOnlyAccessMode(accessMode) {
+		return spec.sessionModeForAccess(accessMode)
+	}
 	if isClaudeFableModel(spec, modelName) {
 		return claudeAutoModeID
 	}

@@ -259,10 +259,14 @@ func (s Spec) probeCommand() []string {
 }
 
 func (s Spec) sessionModeForAccess(accessMode string) string {
-	if accessMode == model.AccessModeFull {
+	switch accessMode {
+	case model.AccessModeFull:
 		return s.FullAccessModeID
+	case model.AccessModeReadOnly:
+		return s.ReadOnlyModeID
+	default:
+		return ""
 	}
-	return ""
 }
 
 func (s Spec) launchCommandForPreview(modelName, reasoningEffort string, addDirs []string, accessMode string) []string {

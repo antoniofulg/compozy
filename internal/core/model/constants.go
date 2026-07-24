@@ -43,17 +43,23 @@ const (
 	DefaultStallTerminalCap = 45 * time.Minute
 	// DefaultStallRetries is the default number of clean-state stall retries
 	// performed before a job is parked.
-	DefaultStallRetries      = 1
-	WorkflowRootDirName      = ".compozy"
-	WorkflowConfigFileName   = "config.toml"
-	WorkflowTasksDirName     = "tasks"
-	WorkflowRunsDirName      = "runs"
-	ArchivedWorkflowDirName  = "_archived"
-	ModeCodeReview           = "pr-review"
-	ModePRDTasks             = "prd-tasks"
-	ModeExec                 = "exec"
-	AccessModeDefault        = "default"
-	AccessModeFull           = "full"
+	DefaultStallRetries     = 1
+	WorkflowRootDirName     = ".compozy"
+	WorkflowConfigFileName  = "config.toml"
+	WorkflowTasksDirName    = "tasks"
+	WorkflowRunsDirName     = "runs"
+	ArchivedWorkflowDirName = "_archived"
+	ModeCodeReview          = "pr-review"
+	ModePRDTasks            = "prd-tasks"
+	ModeExec                = "exec"
+	AccessModeDefault       = "default"
+	AccessModeFull          = "full"
+	// AccessModeReadOnly is an immutable review capability distinct from
+	// default and full. It never relaxes ordinary session defaults; the runtime
+	// boundary denies project writes, mutating terminals, permission escalation,
+	// and external side effects while permitting contained reads and non-mutating
+	// diagnostics.
+	AccessModeReadOnly       = "read-only"
 	OutputFormatTextValue    = "text"
 	OutputFormatJSONValue    = "json"
 	OutputFormatRawJSONValue = "raw-json"

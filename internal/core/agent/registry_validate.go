@@ -75,14 +75,15 @@ func validateRuntimeMode(mode model.ExecutionMode) error {
 
 func validateRuntimeAccessMode(accessMode string) error {
 	switch accessMode {
-	case "", model.AccessModeDefault, model.AccessModeFull:
+	case "", model.AccessModeDefault, model.AccessModeFull, model.AccessModeReadOnly:
 		return nil
 	default:
 		return fmt.Errorf(
-			"invalid --access-mode value %q: must be %q or %q",
+			"invalid --access-mode value %q: must be %q, %q, or %q",
 			accessMode,
 			model.AccessModeDefault,
 			model.AccessModeFull,
+			model.AccessModeReadOnly,
 		)
 	}
 }

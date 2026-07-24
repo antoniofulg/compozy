@@ -685,11 +685,20 @@ func (c *clientImpl) ReadTextFile(
 	})
 }
 
-// WriteTextFile handles ACP file write requests from the agent.
+// WriteTextFile handles ACP file write requests from the agent. A read-only
+// review session denies every project write before touching disk, so no denied
+// operation can change project state.
 func (c *clientImpl) WriteTextFile(
 	ctx context.Context,
 	params acp.WriteTextFileRequest,
 ) (acp.WriteTextFileResponse, error) {
+	if c.readOnly() {
+		decision := ReadOnlyGuard{}.FileWrite()
+		return acp.WriteTextFileResponse{}, &ReadOnlyViolationError{
+			Operation: "write_file",
+			Detail:    decision.Reason + " (file " + filepath.Base(strings.TrimSpace(params.Path)) + ")",
+		}
+	}
 	path, err := c.resolveSessionFilePath(params.SessionId, params.Path)
 	if err != nil {
 		return acp.WriteTextFileResponse{}, err
@@ -709,19 +718,48 @@ func (c *clientImpl) WriteTextFile(
 	})
 }
 
-// RequestPermission auto-approves the first offered option to match the current non-interactive runtime.
+// RequestPermission auto-approves the first offered option to match the current
+// non-interactive runtime. A read-only review session instead denies every
+// permission request, so it can never escalate authority to write project files,
+// mutate Git, reach the network, or read environment secrets.
 func (c *clientImpl) RequestPermission(
 	ctx context.Context,
 	params acp.RequestPermissionRequest,
 ) (acp.RequestPermissionResponse, error) {
+	outcome := defaultPermissionOutcome
+	if c.readOnly() {
+		outcome = readOnlyPermissionOutcome
+	}
 	return runWithDeadline(
 		ctx,
 		c.handlerDeadline,
 		"request permission",
 		func() (acp.RequestPermissionResponse, error) {
-			return defaultPermissionOutcome(params), nil
+			return outcome(params), nil
 		},
 	)
+}
+
+// readOnlyPermissionOutcome denies a permission request. It selects an offered
+// reject option when present, otherwise cancels; in every case authority is not
+// expanded.
+func readOnlyPermissionOutcome(params acp.RequestPermissionRequest) acp.RequestPermissionResponse {
+	for _, option := range params.Options {
+		if option.Kind == acp.PermissionOptionKindRejectOnce ||
+			option.Kind == acp.PermissionOptionKindRejectAlways {
+			return acp.RequestPermissionResponse{
+				Outcome: acp.NewRequestPermissionOutcomeSelected(option.OptionId),
+			}
+		}
+	}
+	return acp.RequestPermissionResponse{
+		Outcome: acp.NewRequestPermissionOutcomeCancelled(),
+	}
+}
+
+// readOnly reports whether this client enforces the read-only review capability.
+func (c *clientImpl) readOnly() bool {
+	return isReadOnlyAccessMode(c.cfg.AccessMode)
 }
 
 // defaultPermissionOutcome auto-approves the first offered option, or cancels

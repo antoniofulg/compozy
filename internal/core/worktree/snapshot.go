@@ -54,6 +54,7 @@ type StatusEntry struct {
 type Snapshot struct {
 	digest            string
 	head              string
+	indexTree         string
 	branch            string
 	root              string
 	porcelain         []byte
@@ -75,6 +76,7 @@ type SnapshotDocument struct {
 	IsGitRepo         bool              `json:"is_git_repo"`
 	HasCommits        bool              `json:"has_commits"`
 	Head              string            `json:"head,omitempty"`
+	IndexTree         string            `json:"index_tree,omitempty"`
 	Branch            string            `json:"branch,omitempty"`
 	Digest            string            `json:"digest,omitempty"`
 	UnsupportedReason string            `json:"unsupported_reason,omitempty"`
@@ -101,6 +103,10 @@ func (s Snapshot) IsSupported() bool { return s.supported }
 func (s Snapshot) Digest() string    { return s.digest }
 func (s Snapshot) Head() string      { return s.head }
 func (s Snapshot) Branch() string    { return s.branch }
+
+// IndexTree returns the tree hash the staged index would produce. It is empty
+// when the index cannot be resolved to a tree (for example, an unmerged index).
+func (s Snapshot) IndexTree() string { return s.indexTree }
 
 // Porcelain returns a copy of the raw git porcelain v1 -z status payload.
 func (s Snapshot) Porcelain() []byte { return append([]byte(nil), s.porcelain...) }
@@ -130,6 +136,7 @@ func (s Snapshot) Document() SnapshotDocument {
 		IsGitRepo:         s.gitRepo,
 		HasCommits:        s.hasCommits,
 		Head:              s.head,
+		IndexTree:         s.indexTree,
 		Branch:            s.branch,
 		Digest:            s.digest,
 		UnsupportedReason: string(s.unsupportedReason),
@@ -197,29 +204,69 @@ func CaptureExcluding(ctx context.Context, root string, excludedPaths ...string)
 		return snapshot, fmt.Errorf("worktree: git branch in %s: %w", root, err)
 	}
 	snapshot.branch = string(bytes.TrimSpace(branch))
-	porcelain, entries, err := captureStatusEntries(ctx, root, normalizedExclusions)
+	return captureWorkingState(ctx, root, snapshot, normalizedExclusions)
+}
+
+// captureWorkingState fingerprints the porcelain status, tracked symlinks, and
+// index tree once HEAD and branch are resolved, and builds the supported
+// snapshot. A missing git executable downgrades to an unsupported snapshot
+// rather than an error, matching the caller's contract.
+func captureWorkingState(
+	ctx context.Context,
+	root string,
+	snapshot Snapshot,
+	exclusions []string,
+) (Snapshot, error) {
+	porcelain, entries, err := captureStatusEntries(ctx, root, exclusions)
 	if err != nil {
-		if isExecLookupError(err) {
-			snapshot.gitAvailable = false
-			snapshot.unsupportedReason = UnsupportedReasonGitMissing
-			return snapshot, nil
-		}
-		return snapshot, err
+		return downgradeOnGitMissing(snapshot, err)
 	}
 	trackedSymlinks, err := captureTrackedSymlinks(ctx, root)
 	if err != nil {
 		return snapshot, fmt.Errorf("worktree: capture tracked symlinks in %s: %w", root, err)
 	}
-	trackedSymlinks = filterExcludedTrackedSymlinks(trackedSymlinks, normalizedExclusions)
+	trackedSymlinks = filterExcludedTrackedSymlinks(trackedSymlinks, exclusions)
+	indexTree, err := captureIndexTree(ctx, root)
+	if err != nil {
+		return downgradeOnGitMissing(snapshot, err)
+	}
 	return buildSupportedSnapshot(
 		root,
 		snapshot.head,
+		indexTree,
 		snapshot.branch,
 		porcelain,
 		entries,
 		trackedSymlinks,
-		normalizedExclusions,
+		exclusions,
 	), nil
+}
+
+// downgradeOnGitMissing converts a missing-git error into an unsupported
+// snapshot; any other error propagates unchanged.
+func downgradeOnGitMissing(snapshot Snapshot, err error) (Snapshot, error) {
+	if isExecLookupError(err) {
+		snapshot.gitAvailable = false
+		snapshot.unsupportedReason = UnsupportedReasonGitMissing
+		return snapshot, nil
+	}
+	return snapshot, err
+}
+
+// captureIndexTree returns the tree hash the staged index would produce. It uses
+// git write-tree, which only writes deduplicated tree objects to the object
+// store and never mutates HEAD, the index, or the working tree. An index that
+// cannot be written as a tree (for example, an unmerged index) yields an empty
+// hash rather than a failure; the porcelain status already records that state.
+func captureIndexTree(ctx context.Context, root string) (string, error) {
+	out, err := runGit(ctx, root, "write-tree")
+	if err != nil {
+		if isExecLookupError(err) {
+			return "", err
+		}
+		return "", nil
+	}
+	return string(bytes.TrimSpace(out)), nil
 }
 
 func captureStatusEntries(ctx context.Context, root string, excludedPaths []string) ([]byte, []StatusEntry, error) {
@@ -371,6 +418,7 @@ func ParsePorcelain(raw []byte) ([]StatusEntry, error) {
 func buildSupportedSnapshot(
 	root string,
 	head string,
+	indexTree string,
 	branch string,
 	porcelain []byte,
 	entries []StatusEntry,
@@ -381,6 +429,9 @@ func buildSupportedSnapshot(
 	h.Write([]byte(captureSchemaVersion))
 	h.Write([]byte{0})
 	h.Write([]byte(head))
+	h.Write([]byte{0})
+	h.Write([]byte("index-tree:"))
+	h.Write([]byte(indexTree))
 	h.Write([]byte{0})
 	h.Write(porcelain)
 	for _, path := range excludedPaths {
@@ -397,6 +448,7 @@ func buildSupportedSnapshot(
 	return Snapshot{
 		digest:          hex.EncodeToString(h.Sum(nil)),
 		head:            head,
+		indexTree:       indexTree,
 		branch:          branch,
 		root:            root,
 		porcelain:       append([]byte(nil), porcelain...),

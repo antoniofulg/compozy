@@ -77,6 +77,17 @@ func (c *clientImpl) createTerminal(
 	if err := ctx.Err(); err != nil {
 		return acp.CreateTerminalResponse{}, err
 	}
+	// Read-only review applies a conservative non-mutating terminal policy over
+	// the normalized argv. A denied command never starts a process, so it cannot
+	// mutate Git, files, or the network.
+	if c.readOnly() {
+		if decision := (ReadOnlyGuard{}).Terminal(params.Command, params.Args); !decision.Allowed {
+			return acp.CreateTerminalResponse{}, &ReadOnlyViolationError{
+				Operation: "terminal",
+				Detail:    decision.Reason,
+			}
+		}
+	}
 
 	// Parent the command to the session's run/attempt context so cancellation
 	// and shutdown propagate, and bound it with an absolute wall-clock cap as a

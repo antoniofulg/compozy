@@ -31,7 +31,18 @@ type Spec struct {
 	DocsURL          string
 	InstallHint      string
 	FullAccessModeID string
-	BootstrapArgs    func(modelName, reasoningEffort string, addDirs []string, accessMode string) []string
+	// ReadOnlyModeID names the adapter's ACP session mode that runs the agent in
+	// a read-only/plan permission mode. It is applied best-effort for read-only
+	// review; when unset or unadvertised the Compozy ACP boundary remains the
+	// enforcement. It is never used to relax authority.
+	ReadOnlyModeID string
+	// SupportsReadOnlyReview declares that the adapter can serve as an enforceable
+	// read-only reviewer: every project mutation routes through the Compozy ACP
+	// file/terminal/permission boundary or a bootstrap-level read-only sandbox, so
+	// the deny-by-default guard can contain it. Preflight rejects reviewer routes
+	// whose adapter does not declare this.
+	SupportsReadOnlyReview bool
+	BootstrapArgs          func(modelName, reasoningEffort string, addDirs []string, accessMode string) []string
 	// LegacyBootstrapArgs configures an older launcher only when its installed
 	// package identity is positively detected. Current ACP adapters are configured
 	// through session options instead of process flags.
@@ -111,9 +122,11 @@ var (
 					FixedArgs: []string{"--yes", "@agentclientprotocol/claude-agent-acp"},
 				},
 			},
-			DocsURL:          "https://github.com/agentclientprotocol/claude-agent-acp",
-			InstallHint:      "Install `@agentclientprotocol/claude-agent-acp` and expose `claude-agent-acp` on PATH.",
-			FullAccessModeID: "bypassPermissions",
+			DocsURL:                "https://github.com/agentclientprotocol/claude-agent-acp",
+			InstallHint:            "Install `@agentclientprotocol/claude-agent-acp` and expose `claude-agent-acp` on PATH.",
+			FullAccessModeID:       "bypassPermissions",
+			ReadOnlyModeID:         "plan",
+			SupportsReadOnlyReview: true,
 			BootstrapArgs: func(_ string, _ string, _ []string, _ string) []string {
 				return nil
 			},
@@ -134,10 +147,12 @@ var (
 					ProbeArgs: []string{"--yes", "@agentclientprotocol/codex-acp", "--version"},
 				},
 			},
-			DocsURL:             "https://github.com/agentclientprotocol/codex-acp",
-			InstallHint:         "Install or update the Codex ACP adapter with `npm install -g @agentclientprotocol/codex-acp@latest`, then expose `codex-acp` on PATH.",
-			FullAccessModeID:    "agent-full-access",
-			LegacyBootstrapArgs: codexBootstrapArgs,
+			DocsURL:                "https://github.com/agentclientprotocol/codex-acp",
+			InstallHint:            "Install or update the Codex ACP adapter with `npm install -g @agentclientprotocol/codex-acp@latest`, then expose `codex-acp` on PATH.",
+			FullAccessModeID:       "agent-full-access",
+			ReadOnlyModeID:         "read-only",
+			SupportsReadOnlyReview: true,
+			LegacyBootstrapArgs:    codexBootstrapArgs,
 		},
 		model.IDEDroid: {
 			ID:             model.IDEDroid,
@@ -159,8 +174,9 @@ var (
 				"DROID_DISABLE_AUTO_UPDATE":         "true",
 				"FACTORY_DROID_AUTO_UPDATE_ENABLED": "false",
 			},
-			DocsURL:     "https://factory.ai/product/cli",
-			InstallHint: "Install or upgrade Droid so `droid exec --output-format acp` is available.",
+			DocsURL:                "https://factory.ai/product/cli",
+			InstallHint:            "Install or upgrade Droid so `droid exec --output-format acp` is available.",
+			SupportsReadOnlyReview: true,
 			BootstrapArgs: func(modelName, reasoningEffort string, _ []string, accessMode string) []string {
 				args := make([]string, 0, 5)
 				if accessMode == model.AccessModeFull {
@@ -171,29 +187,31 @@ var (
 			},
 		},
 		model.IDECursor: {
-			ID:             model.IDECursor,
-			DisplayName:    "Cursor",
-			SetupAgentName: "cursor",
-			DefaultModel:   model.DefaultCursorModel,
-			Command:        "cursor-agent",
-			FixedArgs:      []string{"acp"},
-			ProbeArgs:      []string{"acp", "--help"},
-			DocsURL:        "https://cursor.com/docs/cli/acp",
-			InstallHint:    "Install the Cursor agent CLI package and expose `cursor-agent` on PATH so `cursor-agent acp` works.",
+			ID:                     model.IDECursor,
+			DisplayName:            "Cursor",
+			SetupAgentName:         "cursor",
+			DefaultModel:           model.DefaultCursorModel,
+			Command:                "cursor-agent",
+			FixedArgs:              []string{"acp"},
+			ProbeArgs:              []string{"acp", "--help"},
+			DocsURL:                "https://cursor.com/docs/cli/acp",
+			InstallHint:            "Install the Cursor agent CLI package and expose `cursor-agent` on PATH so `cursor-agent acp` works.",
+			SupportsReadOnlyReview: true,
 			BootstrapArgs: func(_ string, _ string, _ []string, _ string) []string {
 				return nil
 			},
 		},
 		model.IDEOpenCode: {
-			ID:             model.IDEOpenCode,
-			DisplayName:    "OpenCode",
-			SetupAgentName: "opencode",
-			DefaultModel:   model.DefaultOpenCodeModel,
-			Command:        "opencode",
-			FixedArgs:      []string{"acp"},
-			ProbeArgs:      []string{"acp", "--help"},
-			DocsURL:        "https://opencode.ai",
-			InstallHint:    "Install or upgrade OpenCode so the `opencode acp` subcommand is available.",
+			ID:                     model.IDEOpenCode,
+			DisplayName:            "OpenCode",
+			SetupAgentName:         "opencode",
+			DefaultModel:           model.DefaultOpenCodeModel,
+			Command:                "opencode",
+			FixedArgs:              []string{"acp"},
+			ProbeArgs:              []string{"acp", "--help"},
+			DocsURL:                "https://opencode.ai",
+			InstallHint:            "Install or upgrade OpenCode so the `opencode acp` subcommand is available.",
+			SupportsReadOnlyReview: true,
 			BootstrapArgs: func(_ string, _ string, _ []string, _ string) []string {
 				return nil
 			},
@@ -210,8 +228,9 @@ var (
 					FixedArgs: []string{"--yes", "pi-acp"},
 				},
 			},
-			DocsURL:     "https://github.com/svkozak/pi-acp",
-			InstallHint: "Install `pi-acp` and expose the `pi-acp` binary on PATH.",
+			DocsURL:                "https://github.com/svkozak/pi-acp",
+			InstallHint:            "Install `pi-acp` and expose the `pi-acp` binary on PATH.",
+			SupportsReadOnlyReview: true,
 			BootstrapArgs: func(_ string, _ string, _ []string, _ string) []string {
 				return nil
 			},
@@ -231,8 +250,9 @@ var (
 					ProbeArgs: []string{"--yes", "@google/gemini-cli", "--acp", "--help"},
 				},
 			},
-			DocsURL:     "https://geminicli.com",
-			InstallHint: "Install Gemini CLI with ACP support so `gemini --acp` succeeds.",
+			DocsURL:                "https://geminicli.com",
+			InstallHint:            "Install Gemini CLI with ACP support so `gemini --acp` succeeds.",
+			SupportsReadOnlyReview: true,
 			BootstrapArgs: func(_ string, _ string, _ []string, _ string) []string {
 				return nil
 			},
@@ -252,8 +272,9 @@ var (
 					ProbeArgs: []string{"--yes", "@github/copilot", "--acp", "--help"},
 				},
 			},
-			DocsURL:     "https://docs.github.com/en/copilot/reference/copilot-cli-reference/acp-server",
-			InstallHint: "Install GitHub Copilot CLI so `copilot --acp` succeeds.",
+			DocsURL:                "https://docs.github.com/en/copilot/reference/copilot-cli-reference/acp-server",
+			InstallHint:            "Install GitHub Copilot CLI so `copilot --acp` succeeds.",
+			SupportsReadOnlyReview: true,
 			BootstrapArgs: func(_ string, _ string, _ []string, _ string) []string {
 				return nil
 			},
@@ -269,9 +290,10 @@ var (
 			// kiro-cli resolves its model from the --model launch flag and does not
 			// implement session/set_config_option, so the requested model must be
 			// pinned at bootstrap rather than switched at runtime.
-			UsesBootstrapModel: true,
-			DocsURL:            "https://kiro.dev/docs/cli/acp",
-			InstallHint:        "Install Kiro CLI and expose `kiro-cli` on PATH so `kiro-cli acp` works.",
+			UsesBootstrapModel:     true,
+			DocsURL:                "https://kiro.dev/docs/cli/acp",
+			InstallHint:            "Install Kiro CLI and expose `kiro-cli` on PATH so `kiro-cli acp` works.",
+			SupportsReadOnlyReview: true,
 			BootstrapArgs: func(modelName, _ string, _ []string, accessMode string) []string {
 				var args []string
 				if strings.TrimSpace(modelName) != "" {
@@ -284,15 +306,16 @@ var (
 			},
 		},
 		model.IDEDevin: {
-			ID:             model.IDEDevin,
-			DisplayName:    "Devin CLI",
-			SetupAgentName: "devin",
-			DefaultModel:   model.DefaultDevinModel,
-			Command:        "devin",
-			FixedArgs:      []string{"acp"},
-			ProbeArgs:      []string{"acp", "--help"},
-			DocsURL:        "https://devin.ai/cli",
-			InstallHint:    "Install Devin CLI and expose `devin` on PATH so `devin acp` works.",
+			ID:                     model.IDEDevin,
+			DisplayName:            "Devin CLI",
+			SetupAgentName:         "devin",
+			DefaultModel:           model.DefaultDevinModel,
+			Command:                "devin",
+			FixedArgs:              []string{"acp"},
+			ProbeArgs:              []string{"acp", "--help"},
+			DocsURL:                "https://devin.ai/cli",
+			InstallHint:            "Install Devin CLI and expose `devin` on PATH so `devin acp` works.",
+			SupportsReadOnlyReview: true,
 			// devin acp resolves its own defaults; do not pass model, reasoning, or access flags.
 			BootstrapArgs: func(_ string, _ string, _ []string, _ string) []string {
 				return nil
@@ -316,12 +339,22 @@ func codexBootstrapArgs(modelName, reasoningEffort string, _ []string, accessMod
 		args = appendCodexConfigOverrides(args, "model_reasoning_effort="+strconv.Quote(effort))
 	}
 	args = appendCodexConfigOverrides(args, codexManagedRuntimeConfigOverrides...)
-	if accessMode == model.AccessModeFull {
+	switch accessMode {
+	case model.AccessModeFull:
 		args = appendCodexConfigOverrides(
 			args,
 			`approval_policy="never"`,
 			`sandbox_mode="danger-full-access"`,
 			`web_search="live"`,
+		)
+	case model.AccessModeReadOnly:
+		// Read-only review must not sandbox-write directly. Pin the Codex sandbox
+		// to read-only and never approve escalations so mutations can only be
+		// attempted through the Compozy ACP boundary, where they are denied.
+		args = appendCodexConfigOverrides(
+			args,
+			`approval_policy="never"`,
+			`sandbox_mode="read-only"`,
 		)
 	}
 	return args
