@@ -3,6 +3,7 @@ package workspace
 import (
 	"strings"
 
+	"github.com/compozy/compozy/internal/core/convergence"
 	"github.com/compozy/compozy/internal/core/model"
 )
 
@@ -46,6 +47,7 @@ type ProjectConfig struct {
 	Runs         RunsConfig          `toml:"runs,omitempty"`
 	Recovery     AgentRecoveryConfig `toml:"recovery,omitempty"`
 	Sound        SoundConfig         `toml:"sound,omitempty"`
+	Convergence  convergence.Config  `toml:"convergence,omitempty"`
 }
 
 type RuntimeOverrides struct {

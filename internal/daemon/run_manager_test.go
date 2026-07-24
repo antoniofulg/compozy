@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -2867,7 +2868,7 @@ func TestRunManagerEnsureWorkflowIdentityValidatesAndReusesRows(t *testing.T) {
 	if workflowIDByID == nil || *workflowIDByID != *firstID {
 		t.Fatalf("workflowIDByID = %v, want %v", workflowIDByID, firstID)
 	}
-	if projectCfg != (workspacecfg.ProjectConfig{}) {
+	if !reflect.DeepEqual(projectCfg, workspacecfg.ProjectConfig{}) {
 		t.Fatalf("projectCfg = %#v, want zero-value defaults", projectCfg)
 	}
 }

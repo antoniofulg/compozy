@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/compozy/compozy/internal/core/convergence"
 	"github.com/compozy/compozy/internal/core/model"
 )
 
@@ -25,6 +26,7 @@ func buildEffectiveProjectConfig(global, workspace ProjectConfig) ProjectConfig 
 		Runs:         mergeRunsConfig(global.Runs, workspace.Runs),
 		Recovery:     mergeRecoveryConfig(global.Recovery, workspace.Recovery).ApplyDefaults(),
 		Sound:        mergeSoundConfig(global.Sound, workspace.Sound),
+		Convergence:  convergence.Merge(global.Convergence, workspace.Convergence),
 	}
 }
 

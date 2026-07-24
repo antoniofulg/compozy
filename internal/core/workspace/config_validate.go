@@ -59,6 +59,9 @@ func (cfg ProjectConfig) validate(scope string) error {
 	if err := validateSound(scope, cfg.Sound); err != nil {
 		return err
 	}
+	if err := cfg.Convergence.Validate(scope); err != nil {
+		return err
+	}
 	return nil
 }
 
