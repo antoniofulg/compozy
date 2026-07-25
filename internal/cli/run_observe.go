@@ -247,6 +247,15 @@ func attachRemoteCLIConvergenceUI(
 		OpenStream: func(streamCtx context.Context, after apicore.StreamCursor) (apiclient.RunStream, error) {
 			return client.OpenRunStream(streamCtx, runID, after)
 		},
+		Approve: func(approveCtx context.Context, req contract.ApprovalDecisionRequest) error {
+			return client.DecideConvergenceApproval(approveCtx, runID, req)
+		},
+		Resume: func(
+			resumeCtx context.Context,
+			req contract.ConvergenceResumeRequest,
+		) (apicore.Run, error) {
+			return client.ResumeConvergence(resumeCtx, runID, req)
+		},
 		Cancel: func(cancelCtx context.Context) error {
 			return client.CancelRun(cancelCtx, runID)
 		},

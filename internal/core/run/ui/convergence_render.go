@@ -257,6 +257,9 @@ func (m *convergenceModel) appendFooterLines(add func(string), width int) {
 	if errText := strings.TrimSpace(m.lastError); errText != "" {
 		add(lipgloss.NewStyle().Foreground(colorError).Render(truncateString(errText, width)))
 	}
+	if notice := strings.TrimSpace(m.lastNotice); notice != "" {
+		add(lipgloss.NewStyle().Foreground(colorSuccess).Render(truncateString(notice, width)))
+	}
 	hints := make([]string, 0, 4)
 	if m.view.approveEnabled {
 		hints = append(hints, charmtheme.Keycap("a")+" approve", charmtheme.Keycap("r")+" reject")

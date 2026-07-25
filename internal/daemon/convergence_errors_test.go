@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/compozy/compozy/internal/api/contract"
 	"github.com/compozy/compozy/internal/core/convergence"
 )
 
@@ -57,6 +58,12 @@ func TestConvergenceProblemMapsStableCodes(t *testing.T) {
 		{"workspace changed", convergence.ErrWorkspaceChanged, convergence.CodeWorkspaceChanged, http.StatusConflict},
 		{"unknown outcome", convergence.ErrUnknownOutcome, convergence.CodeUnknownOutcome, http.StatusConflict},
 		{"integrity failed", convergence.ErrIntegrityFailed, convergence.CodeIntegrityFailed, http.StatusConflict},
+		{
+			"invalid approval shape",
+			errConvergenceApprovalInvalid,
+			string(contract.CodeValidationError),
+			http.StatusUnprocessableEntity,
+		},
 	}
 	for _, tc := range cases {
 		t.Run("Should map "+tc.name, func(t *testing.T) {

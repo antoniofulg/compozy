@@ -2,10 +2,9 @@ package daemon
 
 import "testing"
 
-// TestAuthorizeConvergenceOperation implements UT-036: it table-tests the full
-// Authorization Rule Pack (AUTH-001 through AUTH-015) covering allowed side
-// effects, denied side effects, the deny-by-default fallthrough, and the
-// protected-weakening park-for-approval behavior for lower-risk transitions.
+// TestAuthorizeConvergenceOperation table-tests the rule-pack model. It does not
+// assert transport enforcement because the daemon has no authenticated caller
+// principal.
 func TestAuthorizeConvergenceOperation(t *testing.T) {
 	t.Parallel()
 	user := convergencePrincipal{Role: convergencePrincipalUser, RunAuthority: true}

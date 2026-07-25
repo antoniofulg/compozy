@@ -511,6 +511,22 @@ func (c *inProcessDaemonCommandClient) GetConvergenceSnapshot(
 	return response.Convergence, nil
 }
 
+func (c *inProcessDaemonCommandClient) DecideConvergenceApproval(
+	ctx context.Context,
+	runID string,
+	req contract.ApprovalDecisionRequest,
+) error {
+	return c.manager.DecideConvergenceApproval(ctx, runID, req)
+}
+
+func (c *inProcessDaemonCommandClient) ResumeConvergence(
+	ctx context.Context,
+	runID string,
+	req contract.ConvergenceResumeRequest,
+) (apicore.Run, error) {
+	return c.manager.ResumeConvergence(ctx, runID, req)
+}
+
 func (c *inProcessDaemonCommandClient) ListRunEvents(
 	ctx context.Context,
 	runID string,

@@ -13,9 +13,8 @@ import (
 // and not-parked conditions reuse the domain sentinels so they map to the stable
 // transport codes; request-shape and authority failures are daemon-local.
 var (
-	errConvergenceApprovalInvalid      = errors.New("daemon: convergence approval request is invalid")
-	errConvergenceApprovalUnauthorized = errors.New("daemon: convergence approval is not authorized")
-	errConvergenceCanceled             = errors.New("daemon: convergence run is canceled")
+	errConvergenceApprovalInvalid = errors.New("daemon: convergence approval request is invalid")
+	errConvergenceCanceled        = errors.New("daemon: convergence run is canceled")
 )
 
 // authorizeResumeTarget is the coordinator's pre-claim gate for a resume request.
@@ -60,19 +59,15 @@ type approvalDecision struct {
 }
 
 // decideApproval validates and applies a protected-action approval decision. It
-// requires a caller with run authority, a valid approve/reject decision, a
-// nonblank reason, and expected fingerprint/snapshot binding to the exact proposal
-// the caller was shown. A repeat of an identical prior decision replays
-// idempotently; a different decision on an already-resolved proposal, or a changed
-// fingerprint/snapshot, is rejected as stale. It never resumes the run.
+// requires a valid approve/reject decision, a nonblank reason, and expected
+// fingerprint/snapshot binding to the exact proposal the caller was shown. A
+// repeat of an identical prior decision replays idempotently; a different
+// decision on an already-resolved proposal, or a changed fingerprint/snapshot, is
+// rejected as stale. It never resumes the run.
 func decideApproval(
 	proposal convergence.ApprovalProposal,
 	req contract.ApprovalDecisionRequest,
-	principal convergencePrincipal,
 ) (approvalDecision, error) {
-	if principal.Role != convergencePrincipalUser || !principal.RunAuthority {
-		return approvalDecision{}, fmt.Errorf("%w: run authority required", errConvergenceApprovalUnauthorized)
-	}
 	if err := validateApprovalShape(req); err != nil {
 		return approvalDecision{}, err
 	}
@@ -104,16 +99,24 @@ func validateApprovalShape(req contract.ApprovalDecisionRequest) error {
 	if strings.TrimSpace(req.Reason) == "" {
 		return fmt.Errorf("%w: reason required", errConvergenceApprovalInvalid)
 	}
+	if strings.TrimSpace(req.ExpectedFingerprint) == "" {
+		return fmt.Errorf("%w: expected fingerprint required", errConvergenceApprovalInvalid)
+	}
+	if strings.TrimSpace(req.ExpectedSnapshot) == "" {
+		return fmt.Errorf("%w: expected snapshot required", errConvergenceApprovalInvalid)
+	}
 	return nil
 }
 
 func bindApprovalToProposal(proposal convergence.ApprovalProposal, req contract.ApprovalDecisionRequest) error {
-	if fingerprint := strings.TrimSpace(req.ExpectedFingerprint); fingerprint != "" &&
-		fingerprint != strings.TrimSpace(proposal.Fingerprint) {
+	if fingerprint := strings.TrimSpace(
+		req.ExpectedFingerprint,
+	); fingerprint != strings.TrimSpace(
+		proposal.Fingerprint,
+	) {
 		return fmt.Errorf("%w: proposal fingerprint changed", convergence.ErrApprovalStale)
 	}
-	if snapshot := strings.TrimSpace(req.ExpectedSnapshot); snapshot != "" &&
-		snapshot != strings.TrimSpace(proposal.Snapshot) {
+	if snapshot := strings.TrimSpace(req.ExpectedSnapshot); snapshot != strings.TrimSpace(proposal.Snapshot) {
 		return fmt.Errorf("%w: proposal snapshot changed", convergence.ErrApprovalStale)
 	}
 	return nil

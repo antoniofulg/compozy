@@ -81,7 +81,14 @@ func (c *clientImpl) createTerminal(
 	// the normalized argv. A denied command never starts a process, so it cannot
 	// mutate Git, files, or the network.
 	if c.readOnly() {
-		if decision := (ReadOnlyGuard{}).Terminal(params.Command, params.Args); !decision.Allowed {
+		guard := ReadOnlyGuard{}
+		if decision := guard.Terminal(params.Command, params.Args); !decision.Allowed {
+			return acp.CreateTerminalResponse{}, &ReadOnlyViolationError{
+				Operation: "terminal",
+				Detail:    decision.Reason,
+			}
+		}
+		if decision := guard.TerminalEnvironment(terminalEnvironmentNames(params.Env)); !decision.Allowed {
 			return acp.CreateTerminalResponse{}, &ReadOnlyViolationError{
 				Operation: "terminal",
 				Detail:    decision.Reason,
@@ -97,7 +104,7 @@ func (c *clientImpl) createTerminal(
 	// #nosec G204 -- ACP terminal execution is the requested session-scoped command runner.
 	cmd := exec.CommandContext(terminalCtx, params.Command, params.Args...)
 	cmd.Dir = cwd
-	cmd.Env = terminalEnvironment(params.Env)
+	cmd.Env = terminalEnvironment(params.Env, c.readOnly())
 	output := newTerminalOutputBuffer(params.OutputByteLimit, c.recordActivity)
 	cmd.Stdout = output
 	cmd.Stderr = output
@@ -147,6 +154,14 @@ func terminalBaseContext(ctx context.Context, session *sessionImpl) context.Cont
 		return ctx
 	}
 	return context.Background()
+}
+
+func terminalEnvironmentNames(env []acp.EnvVariable) []string {
+	names := make([]string, 0, len(env))
+	for i := range env {
+		names = append(names, env[i].Name)
+	}
+	return names
 }
 
 // resolveTerminalCap returns the configured absolute per-command wall-clock cap,
@@ -542,8 +557,12 @@ func trimUTF8Suffix(data []byte, limit int) []byte {
 	return append([]byte(nil), data[start:]...)
 }
 
-func terminalEnvironment(env []acp.EnvVariable) []string {
+func terminalEnvironment(env []acp.EnvVariable, readOnly bool) []string {
 	merged := os.Environ()
+	if readOnly {
+		merged = stripInheritedGitEnvironment(merged)
+		merged = append(merged, "GIT_OPTIONAL_LOCKS=0")
+	}
 	for _, item := range env {
 		name := strings.TrimSpace(item.Name)
 		if name == "" {
@@ -552,4 +571,16 @@ func terminalEnvironment(env []acp.EnvVariable) []string {
 		merged = append(merged, name+"="+item.Value)
 	}
 	return merged
+}
+
+func stripInheritedGitEnvironment(env []string) []string {
+	filtered := make([]string, 0, len(env))
+	for _, item := range env {
+		name, _, _ := strings.Cut(item, "=")
+		if strings.HasPrefix(strings.ToUpper(strings.TrimSpace(name)), "GIT_") {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered
 }

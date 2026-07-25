@@ -40,6 +40,7 @@ const (
 	runModeReview      = "review"
 	runModeReviewWatch = "review_watch"
 	runModeExec        = "exec"
+	runModeConvergence = "convergence"
 
 	runStatusStarting  = "starting"
 	runStatusRunning   = "running"
@@ -126,6 +127,7 @@ type RunManager struct {
 	active               map[string]*activeRun
 	activeReviewWatches  map[reviewWatchKey]string
 	taskGroupSelectionMu sync.Mutex
+	convergenceControlMu sync.Mutex
 
 	runWG   sync.WaitGroup
 	runDBMu sync.Mutex

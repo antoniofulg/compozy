@@ -48,8 +48,8 @@ var (
 	// ErrFingerprintMismatch marks a request whose durable idempotency fingerprint
 	// conflicts with the stored request.
 	ErrFingerprintMismatch = errors.New("convergence: fingerprint mismatch")
-	// ErrNotParked marks a resume target that is not a parked terminal segment.
-	ErrNotParked = errors.New("convergence: resume target not parked")
+	// ErrNotParked marks a control target that is not in the required parked state.
+	ErrNotParked = errors.New("convergence: control target not parked")
 	// ErrResumeCursorStale marks a resume cursor that has changed or was consumed.
 	ErrResumeCursorStale = errors.New("convergence: resume cursor stale")
 	// ErrApprovalStale marks a decision bound to a superseded proposal or snapshot.

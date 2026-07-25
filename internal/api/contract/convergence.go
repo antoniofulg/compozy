@@ -22,16 +22,16 @@ type ConvergenceStartRequest struct {
 	ClientRequestID  string `json:"client_request_id,omitempty"`
 }
 
-// ApprovalDecisionRequest carries a protected-action decision. Actor identity is
-// derived from the authenticated local request, never from this body. The
-// expected fingerprint and snapshot bind the decision to the exact proposal and
-// workspace state it was shown against.
+// ApprovalDecisionRequest carries a protected-action decision. Local transport
+// policy controls access; this body carries no actor identity. The expected
+// fingerprint and snapshot bind the decision to the exact proposal and workspace
+// state it was shown against.
 type ApprovalDecisionRequest struct {
 	ProposalID          string `json:"proposal_id"`
 	Decision            string `json:"decision"`
 	Reason              string `json:"reason"`
-	ExpectedFingerprint string `json:"expected_fingerprint,omitempty"`
-	ExpectedSnapshot    string `json:"expected_snapshot,omitempty"`
+	ExpectedFingerprint string `json:"expected_fingerprint"`
+	ExpectedSnapshot    string `json:"expected_snapshot"`
 	ClientRequestID     string `json:"client_request_id,omitempty"`
 }
 

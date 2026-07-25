@@ -11,6 +11,7 @@ import (
 
 	"github.com/compozy/compozy/internal/store"
 	"github.com/compozy/compozy/pkg/compozy/events"
+	"github.com/compozy/compozy/pkg/compozy/events/kinds"
 )
 
 // Convergence store errors. They are run-local so the per-run store owns no
@@ -205,6 +206,37 @@ func validateConvergenceAppend(
 			ErrConvergenceReplay,
 		)
 	}
+	replayed, err := validateConvergenceSequence(ctx, tx, event)
+	if err != nil || replayed {
+		return replayed, err
+	}
+	terminalSeq, err := convergenceTerminalSeqFrom(ctx, tx, event.RunID)
+	if err != nil {
+		return false, err
+	}
+	if terminalSeq == 0 || event.Seq <= terminalSeq {
+		return false, nil
+	}
+	allowed, err := allowedPostTerminalConvergenceControl(ctx, tx, event)
+	if err != nil {
+		return false, err
+	}
+	if allowed {
+		return false, nil
+	}
+	return false, fmt.Errorf(
+		"%w: convergence segment %q is terminal at seq %d",
+		ErrConvergenceReplay,
+		event.RunID,
+		terminalSeq,
+	)
+}
+
+func validateConvergenceSequence(
+	ctx context.Context,
+	tx *sql.Tx,
+	event events.Event,
+) (bool, error) {
 	matches, present, err := convergenceEventSeqMatches(ctx, tx, event)
 	if err != nil {
 		return false, err
@@ -235,19 +267,35 @@ func validateConvergenceAppend(
 			maxSeq.Int64,
 		)
 	}
-	terminalSeq, err := convergenceTerminalSeqFrom(ctx, tx, event.RunID)
-	if err != nil {
-		return false, err
+	return false, nil
+}
+
+// allowedPostTerminalConvergenceControl permits only a user's explicit approval
+// decision after an approval-required park. The decision is terminal metadata:
+// it cannot start a phase or resume the segment, and every other post-terminal
+// convergence event remains rejected.
+func allowedPostTerminalConvergenceControl(
+	ctx context.Context,
+	q rowQuerier,
+	event events.Event,
+) (bool, error) {
+	if event.Kind != events.EventKindConvergenceApprovalDecided {
+		return false, nil
 	}
-	if terminalSeq > 0 && event.Seq > terminalSeq {
+	var terminalKind, terminalReason string
+	if err := q.QueryRowContext(
+		ctx,
+		`SELECT terminal_kind, terminal_reason FROM convergence_segments WHERE run_id = ?`,
+		strings.TrimSpace(event.RunID),
+	).Scan(&terminalKind, &terminalReason); err != nil {
 		return false, fmt.Errorf(
-			"%w: convergence segment %q is terminal at seq %d",
-			ErrConvergenceReplay,
+			"rundb: read post-terminal convergence control target %q: %w",
 			event.RunID,
-			terminalSeq,
+			err,
 		)
 	}
-	return false, nil
+	return terminalKind == convergenceTerminalParked &&
+		terminalReason == kinds.ConvergenceParkedReasonApprovalRequired, nil
 }
 
 func isGuardedConvergenceEvent(kind events.EventKind) bool {

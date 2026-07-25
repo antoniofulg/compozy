@@ -532,6 +532,20 @@ func TestClientRunQueriesUseCanonicalContract(t *testing.T) {
 		Mode:      "exec",
 		StartedAt: now,
 	}
+	resumedRun := contract.Run{
+		RunID:     "run-2",
+		Status:    "starting",
+		Mode:      "convergence",
+		StartedAt: now.Add(time.Minute),
+	}
+	approvalRequest := contract.ApprovalDecisionRequest{
+		ProposalID:          "proposal-1",
+		Decision:            contract.ConvergenceDecisionApprove,
+		Reason:              "approved after inspection",
+		ExpectedFingerprint: "fp-1",
+		ExpectedSnapshot:    "snap-1",
+	}
+	resumeRequest := contract.ConvergenceResumeRequest{ExpectedCursor: "resume:8"}
 	page := contract.RunEventPage{
 		Events: []events.Event{{
 			SchemaVersion: events.SchemaVersion,
@@ -567,6 +581,28 @@ func TestClientRunQueriesUseCanonicalContract(t *testing.T) {
 					return jsonStructResponse(t, http.StatusOK, contract.RunResponse{Run: run}), nil
 				case http.MethodPost + " /api/runs/run-1/cancel":
 					return jsonResponse(http.StatusAccepted, `{"accepted":true}`), nil
+				case http.MethodPost + " /api/runs/run-1/approvals":
+					var got contract.ApprovalDecisionRequest
+					if err := json.NewDecoder(req.Body).Decode(&got); err != nil {
+						t.Fatalf("decode approval request: %v", err)
+					}
+					if got != approvalRequest {
+						t.Fatalf("approval request = %#v, want %#v", got, approvalRequest)
+					}
+					return jsonResponse(http.StatusAccepted, `{"accepted":true}`), nil
+				case http.MethodPost + " /api/runs/run-1/resume":
+					var got contract.ConvergenceResumeRequest
+					if err := json.NewDecoder(req.Body).Decode(&got); err != nil {
+						t.Fatalf("decode resume request: %v", err)
+					}
+					if got != resumeRequest {
+						t.Fatalf("resume request = %#v, want %#v", got, resumeRequest)
+					}
+					return jsonStructResponse(
+						t,
+						http.StatusAccepted,
+						contract.RunResponse{Run: resumedRun},
+					), nil
 				case http.MethodGet + " /api/runs/run-1/events":
 					query := req.URL.Query()
 					if query.Get("after") != contract.FormatCursor(after.Timestamp, after.Sequence) ||
@@ -606,6 +642,20 @@ func TestClientRunQueriesUseCanonicalContract(t *testing.T) {
 	if err := client.CancelRun(context.Background(), " run-1 "); err != nil {
 		t.Fatalf("CancelRun() error = %v", err)
 	}
+	if err := client.DecideConvergenceApproval(
+		context.Background(),
+		" run-1 ",
+		approvalRequest,
+	); err != nil {
+		t.Fatalf("DecideConvergenceApproval() error = %v", err)
+	}
+	gotResumedRun, err := client.ResumeConvergence(context.Background(), " run-1 ", resumeRequest)
+	if err != nil {
+		t.Fatalf("ResumeConvergence() error = %v", err)
+	}
+	if gotResumedRun.RunID != resumedRun.RunID || gotResumedRun.Mode != resumedRun.Mode {
+		t.Fatalf("ResumeConvergence() = %#v, want %#v", gotResumedRun, resumedRun)
+	}
 
 	eventPage, err := client.ListRunEvents(context.Background(), " run-1 ", after, 50)
 	if err != nil {
@@ -624,6 +674,20 @@ func TestClientRunQueriesUseCanonicalContract(t *testing.T) {
 	}
 	if err := client.CancelRun(context.Background(), " "); !errors.Is(err, ErrRunIDRequired) {
 		t.Fatalf("CancelRun(blank) error = %v, want ErrRunIDRequired", err)
+	}
+	if err := client.DecideConvergenceApproval(
+		context.Background(),
+		" ",
+		approvalRequest,
+	); !errors.Is(err, ErrRunIDRequired) {
+		t.Fatalf("DecideConvergenceApproval(blank) error = %v, want ErrRunIDRequired", err)
+	}
+	if _, err := client.ResumeConvergence(
+		context.Background(),
+		" ",
+		resumeRequest,
+	); !errors.Is(err, ErrRunIDRequired) {
+		t.Fatalf("ResumeConvergence(blank) error = %v, want ErrRunIDRequired", err)
 	}
 	if _, err := client.ListRunEvents(context.Background(), " ", after, 50); !errors.Is(err, ErrRunIDRequired) {
 		t.Fatalf("ListRunEvents(blank) error = %v, want ErrRunIDRequired", err)

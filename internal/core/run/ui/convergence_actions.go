@@ -90,6 +90,7 @@ func (m *convergenceModel) beginApproval(action convergenceAction) {
 		return
 	}
 	m.lastError = ""
+	m.lastNotice = ""
 	m.prompt = convergencePrompt{active: true, action: action}
 }
 
@@ -99,6 +100,7 @@ func (m *convergenceModel) beginResume() {
 		return
 	}
 	m.lastError = ""
+	m.lastNotice = ""
 	m.prompt = convergencePrompt{active: true, action: convergenceActionResume}
 }
 
@@ -222,7 +224,12 @@ func (m *convergenceModel) resumeCmd(req contract.ConvergenceResumeRequest) tea.
 	return func() tea.Msg {
 		ctx, done := actionContext(factory)
 		defer done()
-		return convergenceActionResultMsg{action: convergenceActionResume, err: resume(ctx, req)}
+		continuation, err := resume(ctx, req)
+		return convergenceActionResultMsg{
+			action:       convergenceActionResume,
+			continuation: continuation,
+			err:          err,
+		}
 	}
 }
 

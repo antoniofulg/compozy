@@ -104,38 +104,178 @@ func (ReadOnlyGuard) Terminal(command string, args []string) ReadOnlyDecision {
 		return classifyReadOnlyGit(args)
 	}
 	if _, ok := readOnlyDiagnosticExecutables[base]; ok {
-		return ReadOnlyDecision{Allowed: true, Reason: "non-mutating diagnostic " + base}
+		return classifyReadOnlyDiagnostic(base, args)
 	}
 	return ReadOnlyDecision{Allowed: false, Reason: "command " + base + " is not an approved read-only diagnostic"}
 }
 
+// TerminalEnvironment permits only presentation-related environment overrides.
+// Executable, Git, configuration, pager, path, and temporary-directory controls
+// are denied so an allowed argv cannot regain mutation or code-execution
+// capability through its environment.
+func (ReadOnlyGuard) TerminalEnvironment(names []string) ReadOnlyDecision {
+	for _, rawName := range names {
+		name := strings.ToUpper(strings.TrimSpace(rawName))
+		if name == "" {
+			continue
+		}
+		if _, ok := readOnlyTerminalEnvironmentVariables[name]; !ok {
+			return ReadOnlyDecision{
+				Allowed: false,
+				Reason:  "terminal environment override is not approved for read-only diagnostics",
+			}
+		}
+	}
+	return ReadOnlyDecision{Allowed: true, Reason: "presentation-only terminal environment"}
+}
+
 // classifyReadOnlyGit allows only unambiguously read-only Git subcommands. Global
 // options that carry a separate value are skipped so the true subcommand is
-// found; any command that cannot be resolved to a read subcommand is denied.
+// found; command-execution and file-output flags are denied even when the
+// subcommand itself is read-only.
 func classifyReadOnlyGit(args []string) ReadOnlyDecision {
-	sub := gitSubcommand(args)
+	sub, subIndex := gitSubcommand(args)
 	if sub == "" {
 		return ReadOnlyDecision{Allowed: false, Reason: "git command has no read-only subcommand"}
 	}
-	if _, ok := readOnlyGitSubcommands[sub]; ok {
-		return ReadOnlyDecision{Allowed: true, Reason: "non-mutating git " + sub}
+	if hasUnsafeGitGlobalOption(args[:subIndex]) {
+		return ReadOnlyDecision{
+			Allowed: false,
+			Reason:  "git global option may execute code or change diagnostic behavior",
+		}
 	}
-	return ReadOnlyDecision{Allowed: false, Reason: "git " + sub + " may mutate repository state"}
+	if _, ok := readOnlyGitSubcommands[sub]; !ok {
+		return ReadOnlyDecision{Allowed: false, Reason: "git " + sub + " may mutate repository state"}
+	}
+	if hasGitWriteCapableOption(args[subIndex+1:]) {
+		return ReadOnlyDecision{Allowed: false, Reason: "git " + sub + " option may write files or execute code"}
+	}
+	return ReadOnlyDecision{Allowed: true, Reason: "non-mutating git " + sub}
 }
 
 // gitSubcommand returns the first non-option token, skipping the value of the
-// global options that take one. It returns "" when no subcommand is present.
-func gitSubcommand(args []string) string {
+// global options that take one. It returns the normalized subcommand and its
+// argv index, or an empty subcommand and -1 when none is present.
+func gitSubcommand(args []string) (string, int) {
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if !strings.HasPrefix(arg, "-") {
-			return strings.ToLower(strings.TrimSpace(arg))
+			return strings.ToLower(strings.TrimSpace(arg)), i
 		}
 		if _, takesValue := gitGlobalValueOptions[arg]; takesValue {
 			i++ // skip the option's value
 		}
 	}
-	return ""
+	return "", -1
+}
+
+func hasUnsafeGitGlobalOption(args []string) bool {
+	for _, arg := range args {
+		switch {
+		case arg == "-c", strings.HasPrefix(arg, "-c") && len(arg) > 2:
+			return true
+		case arg == "-C", strings.HasPrefix(arg, "-C") && len(arg) > 2:
+			return true
+		case optionMatches(arg, "--config-env"), optionMatches(arg, "--exec-path"):
+			return true
+		case optionMatches(arg, "--git-dir"), optionMatches(arg, "--work-tree"):
+			return true
+		case arg == "-p", arg == "--paginate":
+			return true
+		}
+	}
+	return false
+}
+
+func hasGitWriteCapableOption(args []string) bool {
+	for _, arg := range args {
+		if optionMatches(arg, "--output") ||
+			optionMatches(arg, "--ext-diff") ||
+			optionMatches(arg, "--textconv") ||
+			optionMatches(arg, "--open-files-in-pager") ||
+			shortOptionMatches(arg, "-O") {
+			return true
+		}
+	}
+	return false
+}
+
+func classifyReadOnlyDiagnostic(base string, args []string) ReadOnlyDecision {
+	unsafe := false
+	switch base {
+	case "sort":
+		unsafe = hasShortOrLongOption(args, "-o", "--output") ||
+			hasShortOrLongOption(args, "-T", "--temporary-directory") ||
+			hasLongOption(args, "--compress-program")
+	case "tree":
+		unsafe = hasShortOrLongOption(args, "-o", "--output")
+	case "date":
+		unsafe = hasShortOrLongOption(args, "-s", "--set")
+	case "hostname":
+		unsafe = hasShortOrLongOption(args, "-F", "--file") ||
+			hasShortOption(args, "-b") ||
+			hasPositionalArgument(args)
+	case "rg":
+		unsafe = hasLongOption(args, "--pre") ||
+			hasLongOption(args, "--hostname-bin") ||
+			hasShortOrLongOption(args, "-z", "--search-zip")
+	}
+	if unsafe {
+		return ReadOnlyDecision{
+			Allowed: false,
+			Reason:  "diagnostic " + base + " option may mutate state or execute code",
+		}
+	}
+	return ReadOnlyDecision{Allowed: true, Reason: "non-mutating diagnostic " + base}
+}
+
+func hasShortOrLongOption(args []string, short, long string) bool {
+	return hasShortOption(args, short) || hasLongOption(args, long)
+}
+
+func hasShortOption(args []string, option string) bool {
+	for _, arg := range args {
+		if arg == "--" {
+			break
+		}
+		if shortOptionMatches(arg, option) {
+			return true
+		}
+	}
+	return false
+}
+
+func shortOptionMatches(arg, option string) bool {
+	if len(option) != 2 || option[0] != '-' || len(arg) < 2 ||
+		arg[0] != '-' || strings.HasPrefix(arg, "--") {
+		return false
+	}
+	return strings.ContainsRune(arg[1:], rune(option[1]))
+}
+
+func hasLongOption(args []string, option string) bool {
+	for _, arg := range args {
+		if arg == "--" {
+			break
+		}
+		if optionMatches(arg, option) {
+			return true
+		}
+	}
+	return false
+}
+
+func optionMatches(arg, option string) bool {
+	return arg == option || strings.HasPrefix(arg, option+"=")
+}
+
+func hasPositionalArgument(args []string) bool {
+	for _, arg := range args {
+		if strings.TrimSpace(arg) != "" && !strings.HasPrefix(arg, "-") {
+			return true
+		}
+	}
+	return false
 }
 
 // gitGlobalValueOptions are the git global options that consume a following
@@ -150,9 +290,8 @@ var gitGlobalValueOptions = map[string]struct{}{
 var readOnlyGitSubcommands = map[string]struct{}{
 	"status": {}, "diff": {}, "log": {}, "show": {}, "rev-parse": {},
 	"ls-files": {}, "ls-tree": {}, "cat-file": {}, "describe": {}, "blame": {},
-	"shortlog": {}, "grep": {}, "reflog": {}, "rev-list": {}, "for-each-ref": {},
-	"name-rev": {}, "merge-base": {}, "show-ref": {}, "symbolic-ref": {},
-	"whatchanged": {}, "count-objects": {}, "cherry": {},
+	"shortlog": {}, "grep": {}, "rev-list": {}, "for-each-ref": {}, "name-rev": {},
+	"merge-base": {}, "show-ref": {}, "whatchanged": {}, "count-objects": {}, "cherry": {},
 }
 
 // readOnlyDiagnosticExecutables is the closed allowlist of non-Git executables
@@ -169,6 +308,18 @@ var readOnlyDiagnosticExecutables = map[string]struct{}{
 	"tac": {}, "fold": {}, "od": {}, "hexdump": {}, "cksum": {}, "sha256sum": {},
 	"md5sum": {}, "du": {}, "df": {}, "whoami": {}, "hostname": {}, "id": {},
 	"groups": {}, "seq": {}, "column": {},
+}
+
+// readOnlyTerminalEnvironmentVariables is deliberately narrow. These variables
+// influence locale, terminal dimensions, or color presentation only; they do
+// not select executables, configuration files, pagers, temporary directories,
+// or command hooks.
+var readOnlyTerminalEnvironmentVariables = map[string]struct{}{
+	"LANG": {}, "LANGUAGE": {},
+	"LC_ALL": {}, "LC_COLLATE": {}, "LC_CTYPE": {}, "LC_MESSAGES": {},
+	"LC_MONETARY": {}, "LC_NUMERIC": {}, "LC_TIME": {},
+	"TERM": {}, "COLORTERM": {}, "COLUMNS": {}, "LINES": {},
+	"NO_COLOR": {}, "CLICOLOR": {}, "CLICOLOR_FORCE": {},
 }
 
 // ReadOnlyReviewSupported reports whether the runtime declares that it can serve

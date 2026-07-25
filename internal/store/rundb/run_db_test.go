@@ -488,6 +488,64 @@ func TestRunDBAppendSyntheticEventUsesNextSequence(t *testing.T) {
 	}
 }
 
+func TestRunDBAppendSyntheticEventSerializesConcurrentSequences(t *testing.T) {
+	t.Parallel()
+
+	const appendCount = 32
+	runID := "run-synthetic-concurrent"
+	db := openTestRunDB(t, runID)
+	defer func() {
+		_ = db.Close()
+	}()
+
+	var (
+		wg        sync.WaitGroup
+		start     = make(chan struct{})
+		results   = make(chan events.Event, appendCount)
+		appendErr = make(chan error, appendCount)
+	)
+	for range appendCount {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			item, err := db.AppendSyntheticEvent(
+				context.Background(),
+				events.EventKindRunCrashed,
+				kinds.RunCrashedPayload{Error: "concurrent synthetic append"},
+			)
+			if err != nil {
+				appendErr <- err
+				return
+			}
+			results <- item
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	close(appendErr)
+
+	for err := range appendErr {
+		t.Errorf("AppendSyntheticEvent() error = %v", err)
+	}
+	seen := make(map[uint64]struct{}, appendCount)
+	for item := range results {
+		if _, duplicate := seen[item.Seq]; duplicate {
+			t.Errorf("duplicate synthetic event sequence %d", item.Seq)
+		}
+		seen[item.Seq] = struct{}{}
+	}
+	if len(seen) != appendCount {
+		t.Fatalf("successful synthetic appends = %d, want %d", len(seen), appendCount)
+	}
+	for seq := uint64(1); seq <= appendCount; seq++ {
+		if _, ok := seen[seq]; !ok {
+			t.Errorf("synthetic event sequence %d missing", seq)
+		}
+	}
+}
+
 func TestRunDBListEventsRespectsLimitAndHasMore(t *testing.T) {
 	t.Parallel()
 

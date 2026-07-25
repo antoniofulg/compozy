@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -58,6 +59,46 @@ func runReadOnlyGit(t *testing.T, dir string, args ...string) {
 	)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, string(out))
+	}
+}
+
+func writeExternalDiffProbe(t *testing.T) (string, string) {
+	t.Helper()
+	probe := filepath.Join(t.TempDir(), "external-diff")
+	marker := probe + ".ran"
+	if err := os.WriteFile(probe, []byte("#!/bin/sh\n: > \"$0.ran\"\n"), 0o700); err != nil {
+		t.Fatalf("write external diff probe: %v", err)
+	}
+	return probe, marker
+}
+
+func runReadOnlyTerminal(t *testing.T, client *clientImpl, sessionID string, args ...string) {
+	t.Helper()
+	resp, err := client.CreateTerminal(context.Background(), acp.CreateTerminalRequest{
+		SessionId: acp.SessionId(sessionID),
+		Command:   "git",
+		Args:      args,
+	})
+	if err != nil {
+		t.Fatalf("CreateTerminal(git %s): %v", strings.Join(args, " "), err)
+	}
+	waitCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	exit, err := client.WaitForTerminalExit(waitCtx, acp.WaitForTerminalExitRequest{
+		SessionId:  acp.SessionId(sessionID),
+		TerminalId: resp.TerminalId,
+	})
+	if err != nil {
+		t.Fatalf("wait for git %s: %v", strings.Join(args, " "), err)
+	}
+	if exit.ExitCode == nil || *exit.ExitCode != 0 {
+		t.Fatalf("git %s exit = %#v, want 0", strings.Join(args, " "), exit.ExitCode)
+	}
+	if _, err := client.ReleaseTerminal(context.Background(), acp.ReleaseTerminalRequest{
+		SessionId:  acp.SessionId(sessionID),
+		TerminalId: resp.TerminalId,
+	}); err != nil {
+		t.Fatalf("release git terminal: %v", err)
 	}
 }
 
@@ -149,18 +190,41 @@ func TestReadOnlyReviewerTerminalPolicy(t *testing.T) {
 	t.Parallel()
 	requireGit(t)
 	root := initReadOnlyGitRepo(t)
+	outside := t.TempDir()
 	client, sessionID := newReadOnlyClient(root)
 
 	denied := []struct {
 		name    string
 		command string
 		args    []string
+		env     []acp.EnvVariable
 	}{
-		{"git commit", "git", []string{"commit", "--allow-empty", "-m", "x"}},
-		{"git push", "git", []string{"push", "origin", "main"}},
-		{"file delete", "rm", []string{"-rf", "README.md"}},
-		{"network fetch", "curl", []string{"https://example.com"}},
-		{"shell wrapper", "bash", []string{"-c", "echo hi > pwned"}},
+		{name: "git commit", command: "git", args: []string{"commit", "--allow-empty", "-m", "x"}},
+		{name: "git push", command: "git", args: []string{"push", "origin", "main"}},
+		{name: "file delete", command: "rm", args: []string{"-rf", "README.md"}},
+		{name: "network fetch", command: "curl", args: []string{"https://example.com"}},
+		{name: "shell wrapper", command: "bash", args: []string{"-c", "echo hi > pwned"}},
+		{name: "git alternate cwd", command: "git", args: []string{"-C", outside, "status"}},
+		{name: "git alternate git dir", command: "git", args: []string{"--git-dir", outside, "status"}},
+		{name: "git alternate work tree", command: "git", args: []string{"--work-tree=" + outside, "status"}},
+		{
+			name:    "git external diff environment",
+			command: "git",
+			args:    []string{"diff"},
+			env: []acp.EnvVariable{
+				{Name: "GIT_EXTERNAL_DIFF", Value: filepath.Join(root, "writer")},
+			},
+		},
+		{
+			name:    "git config environment",
+			command: "git",
+			args:    []string{"status", "--porcelain"},
+			env: []acp.EnvVariable{
+				{Name: "GIT_CONFIG_COUNT", Value: "1"},
+				{Name: "GIT_CONFIG_KEY_0", Value: "diff.external"},
+				{Name: "GIT_CONFIG_VALUE_0", Value: filepath.Join(root, "writer")},
+			},
+		},
 	}
 	for _, tc := range denied {
 		t.Run("Should deny "+tc.name, func(t *testing.T) {
@@ -168,6 +232,7 @@ func TestReadOnlyReviewerTerminalPolicy(t *testing.T) {
 				SessionId: acp.SessionId(sessionID),
 				Command:   tc.command,
 				Args:      tc.args,
+				Env:       tc.env,
 			})
 			if err == nil {
 				t.Fatalf("CreateTerminal(%s) succeeded, want read-only denial", tc.name)
@@ -192,6 +257,7 @@ func TestReadOnlyReviewerTerminalPolicy(t *testing.T) {
 			SessionId: acp.SessionId(sessionID),
 			Command:   "git",
 			Args:      []string{"status", "--porcelain"},
+			Env:       []acp.EnvVariable{{Name: "NO_COLOR", Value: "1"}},
 		})
 		if err != nil {
 			t.Fatalf("permitted diagnostic denied: %v", err)
@@ -215,4 +281,47 @@ func TestReadOnlyReviewerTerminalPolicy(t *testing.T) {
 			t.Fatalf("release diagnostic terminal: %v", err)
 		}
 	})
+}
+
+func TestReadOnlyReviewerStripsInheritedGitEnvironment(t *testing.T) {
+	requireGit(t)
+
+	cases := []struct {
+		name string
+		set  func(*testing.T, string)
+	}{
+		{
+			name: "external diff",
+			set: func(t *testing.T, probe string) {
+				t.Helper()
+				t.Setenv("GIT_EXTERNAL_DIFF", probe)
+			},
+		},
+		{
+			name: "config parameters",
+			set: func(t *testing.T, probe string) {
+				t.Helper()
+				t.Setenv("GIT_CONFIG_COUNT", "1")
+				t.Setenv("GIT_CONFIG_KEY_0", "diff.external")
+				t.Setenv("GIT_CONFIG_VALUE_0", probe)
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run("Should strip inherited Git "+tc.name, func(t *testing.T) {
+			root := initReadOnlyGitRepo(t)
+			if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("# changed\n"), 0o600); err != nil {
+				t.Fatalf("change README: %v", err)
+			}
+			probe, marker := writeExternalDiffProbe(t)
+			tc.set(t, probe)
+			client, sessionID := newReadOnlyClient(root)
+
+			runReadOnlyTerminal(t, client, sessionID, "diff")
+
+			if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("inherited Git %s executed external diff (stat error = %v)", tc.name, err)
+			}
+		})
+	}
 }

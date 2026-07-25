@@ -1,11 +1,10 @@
 package daemon
 
-// Convergence authorization operations. Each corresponds to one or more rows of
-// the Authorization Rule Pack (AUTH-001..AUTH-015) in the user stories. The
-// coordinator and transport service map a concrete caller to a convergencePrincipal
-// and gate every security-sensitive convergence transition through
-// authorizeConvergenceOperation before any durable side effect. Operations are an
-// internal enum with no wire form, so they carry no string identifiers.
+// Convergence authorization operations model the Authorization Rule Pack
+// (AUTH-001..AUTH-015) from the user stories. This package does not authenticate
+// HTTP or UDS callers, so the rule pack is not a transport authorization gate.
+// Local approval and resume endpoints rely on the daemon's local transport
+// boundary until a transport-authenticated principal exists.
 type convergenceOperation int
 
 const (
@@ -39,11 +38,10 @@ const (
 	convergencePrincipalUnknown  convergencePrincipalRole = "unknown"
 )
 
-// convergencePrincipal is the authenticated caller or session. Its capabilities
-// are derived from the daemon-verified request, never from client-supplied actor
-// identity. RunAuthority means the caller holds current workspace run authority;
-// CurrentReview means a reviewer session is scoped to the current snapshot;
-// ScopedToBatch means a fixer session is scoped to the active correction batch.
+// convergencePrincipal models a caller or session for rule-pack evaluation.
+// RunAuthority means a user holds workspace run authority; CurrentReview means a
+// reviewer is scoped to the current snapshot; ScopedToBatch means a fixer is
+// scoped to the active correction batch.
 type convergencePrincipal struct {
 	Role          convergencePrincipalRole
 	RunAuthority  bool

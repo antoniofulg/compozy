@@ -41,17 +41,19 @@ type RemoteConvergenceAttachOptions struct {
 	LoadConvergence func(context.Context) (contract.ConvergenceSnapshot, error)
 	OpenStream      func(context.Context, apicore.StreamCursor) (apiclient.RunStream, error)
 	Approve         func(context.Context, contract.ApprovalDecisionRequest) error
-	Resume          func(context.Context, contract.ConvergenceResumeRequest) error
+	Resume          func(context.Context, contract.ConvergenceResumeRequest) (apicore.Run, error)
 	Cancel          func(context.Context) error
 }
 
 type convergenceSnapshotMsg struct {
 	snapshot contract.ConvergenceSnapshot
+	err      error
 }
 
 type convergenceActionResultMsg struct {
-	action convergenceAction
-	err    error
+	action       convergenceAction
+	continuation apicore.Run
+	err          error
 }
 
 type convergenceModel struct {
@@ -66,11 +68,12 @@ type convergenceModel struct {
 	quitDialog       quitDialogState
 	prompt           convergencePrompt
 	lastError        string
+	lastNotice       string
 	onQuit           func(uiQuitRequest)
 	now              time.Time
 	loadConvergence  func(context.Context) (contract.ConvergenceSnapshot, error)
 	approve          func(context.Context, contract.ApprovalDecisionRequest) error
-	resume           func(context.Context, contract.ConvergenceResumeRequest) error
+	resume           func(context.Context, contract.ConvergenceResumeRequest) (apicore.Run, error)
 	cancel           func(context.Context) error
 	newActionContext func() (context.Context, context.CancelFunc)
 }
@@ -345,11 +348,14 @@ func (m *convergenceModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case spinnerTickMsg:
 		return m, nil
 	case convergenceSnapshotMsg:
+		if value.err != nil {
+			m.lastError = fmt.Sprintf("reload convergence snapshot failed: %v", value.err)
+			return m, nil
+		}
 		m.applyConvergenceSnapshot(value.snapshot)
 		return m, nil
 	case convergenceActionResultMsg:
-		m.handleActionResult(value)
-		return m, nil
+		return m, m.handleActionResult(value)
 	case events.Event:
 		m.handleParentEvent(value)
 		return m, nil
@@ -393,12 +399,39 @@ func (m *convergenceModel) handleParentEvent(ev events.Event) {
 	}
 }
 
-func (m *convergenceModel) handleActionResult(msg convergenceActionResultMsg) {
+func (m *convergenceModel) handleActionResult(msg convergenceActionResultMsg) tea.Cmd {
 	if msg.err != nil {
 		m.lastError = fmt.Sprintf("%s failed: %v", convergenceActionLabel(msg.action), msg.err)
-		return
+		m.lastNotice = ""
+		return nil
 	}
 	m.lastError = ""
+	m.lastNotice = ""
+	if msg.action == convergenceActionResume {
+		if runID := strings.TrimSpace(msg.continuation.RunID); runID != "" {
+			m.lastNotice = "Continuation run: " + runID
+		}
+	}
+	switch msg.action {
+	case convergenceActionApprove, convergenceActionReject, convergenceActionResume:
+		return m.reloadConvergenceCmd()
+	default:
+		return nil
+	}
+}
+
+func (m *convergenceModel) reloadConvergenceCmd() tea.Cmd {
+	load := m.loadConvergence
+	if load == nil {
+		return nil
+	}
+	factory := m.newActionContext
+	return func() tea.Msg {
+		ctx, done := actionContext(factory)
+		defer done()
+		snapshot, err := load(ctx)
+		return convergenceSnapshotMsg{snapshot: snapshot, err: err}
+	}
 }
 
 // isTerminal reports whether the convergence segment reached a terminal outcome.

@@ -32,6 +32,8 @@ var browserRouteExclusions = map[string]struct{}{
 	"DELETE /api/workspaces/{id}":                 {},
 	"GET /api/runs/{run_id}/convergence/snapshot": {},
 	"GET /api/runs/{run_id}/events":               {},
+	"POST /api/runs/{run_id}/approvals":           {},
+	"POST /api/runs/{run_id}/resume":              {},
 	"GET /api/tasks/{slug}/items":                 {},
 	"GET /api/workspaces/{id}":                    {},
 	"PATCH /api/workspaces/{id}":                  {},

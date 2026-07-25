@@ -2,11 +2,14 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/compozy/compozy/internal/api/contract"
+	apicore "github.com/compozy/compozy/internal/api/core"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -181,9 +184,12 @@ func TestUT038ConvergenceApprovalResumeSeparation(t *testing.T) {
 				approvals = append(approvals, req)
 				return nil
 			},
-			Resume: func(_ context.Context, _ contract.ConvergenceResumeRequest) error {
+			Resume: func(
+				_ context.Context,
+				_ contract.ConvergenceResumeRequest,
+			) (apicore.Run, error) {
 				resumeCalls++
-				return nil
+				return apicore.Run{}, nil
 			},
 		})
 
@@ -230,9 +236,12 @@ func TestUT038ConvergenceApprovalResumeSeparation(t *testing.T) {
 		mdl := newRemoteConvergenceModel(RemoteConvergenceAttachOptions{
 			Convergence:    parkedApprovalContract(),
 			HasConvergence: true,
-			Resume: func(_ context.Context, req contract.ConvergenceResumeRequest) error {
+			Resume: func(
+				_ context.Context,
+				req contract.ConvergenceResumeRequest,
+			) (apicore.Run, error) {
 				resumes = append(resumes, req)
-				return nil
+				return apicore.Run{RunID: "run-conv-2"}, nil
 			},
 		})
 		mdl.beginResume()
@@ -243,9 +252,16 @@ func TestUT038ConvergenceApprovalResumeSeparation(t *testing.T) {
 		if cmd == nil {
 			t.Fatal("resume submit must fire a command")
 		}
-		cmd()
+		result := cmd()
 		if len(resumes) != 1 || resumes[0].ExpectedCursor != "cursor-xyz" {
 			t.Fatalf("resume calls = %+v, want one with cursor-xyz", resumes)
+		}
+		mdl.Update(result)
+		if mdl.lastNotice != "Continuation run: run-conv-2" {
+			t.Fatalf("resume notice = %q, want continuation run ID", mdl.lastNotice)
+		}
+		if view := mdl.View().Content; !strings.Contains(view, "Continuation run: run-conv-2") {
+			t.Fatalf("resume result must render continuation run ID, view = %q", view)
 		}
 	})
 
@@ -261,6 +277,144 @@ func TestUT038ConvergenceApprovalResumeSeparation(t *testing.T) {
 		}
 		if mdl.lastError == "" {
 			t.Fatal("resume refusal must report why")
+		}
+	})
+}
+
+func TestConvergenceActionResultReloadsCanonicalSnapshot(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name   string
+		action convergenceAction
+		fresh  func() contract.ConvergenceSnapshot
+		assert func(*testing.T, *convergenceModel)
+	}{
+		{
+			name:   "approve",
+			action: convergenceActionApprove,
+			fresh: func() contract.ConvergenceSnapshot {
+				snap := parkedApprovalContract()
+				snap.Approvals[0].Decision = contract.ConvergenceDecisionApprove
+				return snap
+			},
+			assert: func(t *testing.T, mdl *convergenceModel) {
+				t.Helper()
+				if mdl.view.approveEnabled {
+					t.Fatal("approved proposal must no longer be actionable")
+				}
+			},
+		},
+		{
+			name:   "reject",
+			action: convergenceActionReject,
+			fresh: func() contract.ConvergenceSnapshot {
+				snap := parkedApprovalContract()
+				snap.Approvals[0].Decision = contract.ConvergenceDecisionReject
+				return snap
+			},
+			assert: func(t *testing.T, mdl *convergenceModel) {
+				t.Helper()
+				if mdl.view.approveEnabled {
+					t.Fatal("rejected proposal must no longer be actionable")
+				}
+			},
+		},
+		{
+			name:   "resume",
+			action: convergenceActionResume,
+			fresh: func() contract.ConvergenceSnapshot {
+				snap := parkedApprovalContract()
+				snap.Handoff.ResumeAvailable = false
+				snap.Handoff.ResumeCursor = ""
+				snap.Relations = append(snap.Relations, contract.ConvergenceRelation{
+					Kind:  contract.ConvergenceRelationContinuation,
+					RunID: "run-conv-2",
+				})
+				return snap
+			},
+			assert: func(t *testing.T, mdl *convergenceModel) {
+				t.Helper()
+				if mdl.view.resumeEnabled {
+					t.Fatal("claimed resume cursor must no longer be actionable")
+				}
+				if got := mdl.view.relations[len(mdl.view.relations)-1].RunID; got != "run-conv-2" {
+					t.Fatalf("continuation relation = %q, want run-conv-2", got)
+				}
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			loadCalls := 0
+			mdl := newRemoteConvergenceModel(RemoteConvergenceAttachOptions{
+				Convergence:    parkedApprovalContract(),
+				HasConvergence: true,
+				LoadConvergence: func(context.Context) (contract.ConvergenceSnapshot, error) {
+					loadCalls++
+					return tc.fresh(), nil
+				},
+			})
+
+			_, cmd := mdl.Update(convergenceActionResultMsg{action: tc.action})
+			if cmd == nil {
+				t.Fatal("successful convergence action must reload the canonical snapshot")
+			}
+			msg := cmd()
+			if loadCalls != 1 {
+				t.Fatalf("snapshot reload calls = %d, want 1", loadCalls)
+			}
+			if _, ok := msg.(convergenceSnapshotMsg); !ok {
+				t.Fatalf("reload message = %T, want convergenceSnapshotMsg", msg)
+			}
+			mdl.Update(msg)
+			tc.assert(t, mdl)
+		})
+	}
+
+	t.Run("failed action does not reload", func(t *testing.T) {
+		t.Parallel()
+		loadCalls := 0
+		mdl := newRemoteConvergenceModel(RemoteConvergenceAttachOptions{
+			Convergence:    parkedApprovalContract(),
+			HasConvergence: true,
+			LoadConvergence: func(context.Context) (contract.ConvergenceSnapshot, error) {
+				loadCalls++
+				return contract.ConvergenceSnapshot{}, nil
+			},
+		})
+		_, cmd := mdl.Update(convergenceActionResultMsg{
+			action: convergenceActionResume,
+			err:    errors.New("resume rejected"),
+		})
+		if cmd != nil {
+			t.Fatal("failed convergence action must not reload")
+		}
+		if loadCalls != 0 || mdl.lastError == "" {
+			t.Fatalf("failed action reloads/error = %d/%q, want 0/non-empty", loadCalls, mdl.lastError)
+		}
+	})
+
+	t.Run("reload failure remains visible", func(t *testing.T) {
+		t.Parallel()
+		mdl := newRemoteConvergenceModel(RemoteConvergenceAttachOptions{
+			Convergence:    parkedApprovalContract(),
+			HasConvergence: true,
+			LoadConvergence: func(context.Context) (contract.ConvergenceSnapshot, error) {
+				return contract.ConvergenceSnapshot{}, errors.New("snapshot unavailable")
+			},
+		})
+		_, cmd := mdl.Update(convergenceActionResultMsg{action: convergenceActionApprove})
+		if cmd == nil {
+			t.Fatal("successful convergence action must attempt a reload")
+		}
+		mdl.Update(cmd())
+		if !strings.Contains(mdl.lastError, "reload convergence snapshot failed") {
+			t.Fatalf("reload error = %q, want visible reload failure", mdl.lastError)
+		}
+		if !mdl.view.approveEnabled {
+			t.Fatal("failed reload must not fabricate a fresh projection")
 		}
 	})
 }

@@ -118,6 +118,13 @@ type stubDaemonCommandClient struct {
 	snapshotErr          error
 	snapshotFunc         func(context.Context, string) (apicore.RunSnapshot, error)
 	convergenceFunc      func(context.Context, string) (contract.ConvergenceSnapshot, error)
+	approvalRunID        string
+	approvalRequest      contract.ApprovalDecisionRequest
+	approvalErr          error
+	resumeRunID          string
+	resumeRequest        contract.ConvergenceResumeRequest
+	resumeRun            apicore.Run
+	resumeErr            error
 	stream               apiclient.RunStream
 	streamErr            error
 }
@@ -518,6 +525,32 @@ func (c *stubDaemonCommandClient) GetConvergenceSnapshot(
 	return contract.ConvergenceSnapshot{}, nil
 }
 
+func (c *stubDaemonCommandClient) DecideConvergenceApproval(
+	_ context.Context,
+	runID string,
+	req contract.ApprovalDecisionRequest,
+) error {
+	if c == nil {
+		return errors.New("stub daemon client is required")
+	}
+	c.approvalRunID = runID
+	c.approvalRequest = req
+	return c.approvalErr
+}
+
+func (c *stubDaemonCommandClient) ResumeConvergence(
+	_ context.Context,
+	runID string,
+	req contract.ConvergenceResumeRequest,
+) (apicore.Run, error) {
+	if c == nil {
+		return apicore.Run{}, errors.New("stub daemon client is required")
+	}
+	c.resumeRunID = runID
+	c.resumeRequest = req
+	return c.resumeRun, c.resumeErr
+}
+
 func (c *stubDaemonCommandClient) ListRunEvents(
 	context.Context,
 	string,
@@ -847,6 +880,80 @@ func TestDefaultAttachCLIRunUIPassesWorkspaceRootToRemoteUI(t *testing.T) {
 	}
 	if workspaceRoot != "/tmp/compozy-workspace" {
 		t.Fatalf("workspace root = %q, want daemon workspace root", workspaceRoot)
+	}
+}
+
+func TestDefaultAttachCLIConvergenceUIWiresApprovalAndResume(t *testing.T) {
+	t.Parallel()
+
+	acquireCLITestGlobalOverride(t)
+
+	client := &stubDaemonCommandClient{
+		snapshot: apicore.RunSnapshot{
+			Run: apicore.Run{RunID: "run-convergence", Mode: daemonRunModeConvergence, Status: "parked"},
+		},
+		convergenceFunc: func(context.Context, string) (contract.ConvergenceSnapshot, error) {
+			return contract.ConvergenceSnapshot{ConvergenceID: "cvg-1"}, nil
+		},
+		resumeRun: apicore.Run{RunID: "run-convergence-2"},
+	}
+	session := newFakeCLIUISession()
+	session.waitFn = func(*fakeCLIUISession) error {
+		return nil
+	}
+	approval := contract.ApprovalDecisionRequest{
+		ProposalID:          "proposal-1",
+		Decision:            contract.ConvergenceDecisionApprove,
+		Reason:              "approved after inspection",
+		ExpectedFingerprint: "fp-1",
+		ExpectedSnapshot:    "snap-1",
+	}
+	resume := contract.ConvergenceResumeRequest{ExpectedCursor: "resume:8"}
+
+	originalOpenRemoteUI := openCLIRemoteConvergenceUI
+	t.Cleanup(func() {
+		openCLIRemoteConvergenceUI = originalOpenRemoteUI
+	})
+	openCLIRemoteConvergenceUI = func(
+		ctx context.Context,
+		opts uipkg.RemoteConvergenceAttachOptions,
+	) (uipkg.Session, error) {
+		if opts.Approve == nil || opts.Resume == nil {
+			t.Fatal("convergence control callbacks must be wired")
+		}
+		if err := opts.Approve(ctx, approval); err != nil {
+			t.Fatalf("Approve() error = %v", err)
+		}
+		continued, err := opts.Resume(ctx, resume)
+		if err != nil {
+			t.Fatalf("Resume() error = %v", err)
+		}
+		if continued.RunID != "run-convergence-2" {
+			t.Fatalf("Resume().RunID = %q, want run-convergence-2", continued.RunID)
+		}
+		return session, nil
+	}
+
+	if err := defaultAttachCLIRunUI(context.Background(), client, "run-convergence"); err != nil {
+		t.Fatalf("defaultAttachCLIRunUI() error = %v", err)
+	}
+	if client.approvalRunID != "run-convergence" || client.approvalRequest != approval {
+		t.Fatalf(
+			"approval call = (%q, %#v), want (%q, %#v)",
+			client.approvalRunID,
+			client.approvalRequest,
+			"run-convergence",
+			approval,
+		)
+	}
+	if client.resumeRunID != "run-convergence" || client.resumeRequest != resume {
+		t.Fatalf(
+			"resume call = (%q, %#v), want (%q, %#v)",
+			client.resumeRunID,
+			client.resumeRequest,
+			"run-convergence",
+			resume,
+		)
 	}
 }
 

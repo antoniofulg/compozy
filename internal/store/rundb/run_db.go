@@ -201,7 +201,7 @@ func (r *RunDB) CurrentMaxSequence(ctx context.Context) (uint64, error) {
 }
 
 // StoreEventBatch persists canonical events and projection rows in one transaction.
-func (r *RunDB) StoreEventBatch(ctx context.Context, items []events.Event) (retErr error) {
+func (r *RunDB) StoreEventBatch(ctx context.Context, items []events.Event) error {
 	if len(items) == 0 {
 		return nil
 	}
@@ -210,7 +210,10 @@ func (r *RunDB) StoreEventBatch(ctx context.Context, items []events.Event) (retE
 	}
 	r.convergeMu.Lock()
 	defer r.convergeMu.Unlock()
+	return r.storeEventBatchLocked(ctx, items)
+}
 
+func (r *RunDB) storeEventBatchLocked(ctx context.Context, items []events.Event) (retErr error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("rundb: begin event batch: %w", err)
@@ -270,6 +273,9 @@ func (r *RunDB) AppendSyntheticEvent(
 		return events.Event{}, fmt.Errorf("rundb: marshal %s payload: %w", kind, err)
 	}
 
+	r.convergeMu.Lock()
+	defer r.convergeMu.Unlock()
+
 	maxSeq, err := r.CurrentMaxSequence(ctx)
 	if err != nil {
 		return events.Event{}, err
@@ -283,7 +289,7 @@ func (r *RunDB) AppendSyntheticEvent(
 		Kind:          kind,
 		Payload:       rawPayload,
 	}
-	if err := r.StoreEventBatch(ctx, []events.Event{item}); err != nil {
+	if err := r.storeEventBatchLocked(ctx, []events.Event{item}); err != nil {
 		return events.Event{}, err
 	}
 	return item, nil

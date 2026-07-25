@@ -291,6 +291,51 @@ func (c *Client) GetConvergenceSnapshot(
 	return payload.Convergence, nil
 }
 
+// DecideConvergenceApproval records one fingerprint- and snapshot-bound approval
+// decision without resuming the parked convergence segment.
+func (c *Client) DecideConvergenceApproval(
+	ctx context.Context,
+	runID string,
+	req contract.ApprovalDecisionRequest,
+) error {
+	if c == nil {
+		return ErrDaemonClientRequired
+	}
+
+	trimmedRunID := strings.TrimSpace(runID)
+	if trimmedRunID == "" {
+		return ErrRunIDRequired
+	}
+
+	path := "/api/runs/" + url.PathEscape(trimmedRunID) + "/approvals"
+	_, err := c.doJSON(ctx, http.MethodPost, path, req, nil)
+	return err
+}
+
+// ResumeConvergence explicitly claims a parked segment and returns the linked
+// continuation run.
+func (c *Client) ResumeConvergence(
+	ctx context.Context,
+	runID string,
+	req contract.ConvergenceResumeRequest,
+) (apicore.Run, error) {
+	if c == nil {
+		return apicore.Run{}, ErrDaemonClientRequired
+	}
+
+	trimmedRunID := strings.TrimSpace(runID)
+	if trimmedRunID == "" {
+		return apicore.Run{}, ErrRunIDRequired
+	}
+
+	var response contract.RunResponse
+	path := "/api/runs/" + url.PathEscape(trimmedRunID) + "/resume"
+	if _, err := c.doJSON(ctx, http.MethodPost, path, req, &response); err != nil {
+		return apicore.Run{}, err
+	}
+	return response.Run, nil
+}
+
 // GetTaskRunMultipleSnapshot loads the ordered child-state snapshot for a daemon-owned multi-run parent.
 func (c *Client) GetTaskRunMultipleSnapshot(
 	ctx context.Context,

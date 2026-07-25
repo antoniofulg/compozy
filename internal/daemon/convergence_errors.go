@@ -1,8 +1,10 @@
 package daemon
 
 import (
+	"errors"
 	"net/http"
 
+	"github.com/compozy/compozy/internal/api/contract"
 	apicore "github.com/compozy/compozy/internal/api/core"
 	"github.com/compozy/compozy/internal/core/convergence"
 )
@@ -37,7 +39,7 @@ var convergenceCodeMessage = map[string]string{
 	convergence.CodeTargetIneligible:     "the target is not recognized completed work eligible for convergence",
 	convergence.CodeAlreadyActive:        "an active convergence run already exists for this target",
 	convergence.CodeFingerprintMismatch:  "the request fingerprint does not match the stored convergence result",
-	convergence.CodeNotParked:            "the convergence segment is not parked and cannot be resumed",
+	convergence.CodeNotParked:            "the convergence segment is not parked for the requested operation",
 	convergence.CodeResumeCursorStale:    "the resume cursor is stale or already claimed",
 	convergence.CodeApprovalStale:        "the approval proposal or snapshot has changed",
 	convergence.CodeWorkspaceChanged:     "the workspace changed outside a convergence phase checkpoint",
@@ -54,6 +56,15 @@ var convergenceCodeMessage = map[string]string{
 func convergenceProblem(err error, details map[string]string) *apicore.Problem {
 	if err == nil {
 		return nil
+	}
+	if errors.Is(err, errConvergenceApprovalInvalid) {
+		return apicore.NewProblem(
+			http.StatusUnprocessableEntity,
+			string(contract.CodeValidationError),
+			"convergence approval request is invalid",
+			convergenceSafeDetails(details),
+			err,
+		)
 	}
 	code, ok := convergence.TransportCode(err)
 	if !ok {
@@ -83,4 +94,11 @@ func convergenceSafeDetails(details map[string]string) map[string]any {
 		out[key] = value
 	}
 	return out
+}
+
+func convergenceControlError(err error, details map[string]string) error {
+	if problem := convergenceProblem(err, details); problem != nil {
+		return problem
+	}
+	return err
 }

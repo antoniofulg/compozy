@@ -22,6 +22,7 @@ go.work.sum
 /extensions/cy-qa-workflow/cy-qa-workflow
 .codex/CONTINUITY*
 .peer-reviews/
+/.code-review-artifacts/
 .resources/
 .factory/skills
 skills/*/autoresearch-*/

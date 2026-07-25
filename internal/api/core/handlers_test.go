@@ -20,7 +20,9 @@ import (
 	"github.com/coder/websocket/wsjson"
 	"github.com/gin-gonic/gin"
 
+	"github.com/compozy/compozy/internal/api/contract"
 	"github.com/compozy/compozy/internal/api/core"
+	"github.com/compozy/compozy/internal/core/convergence"
 	"github.com/compozy/compozy/internal/store/globaldb"
 )
 
@@ -68,6 +70,254 @@ func TestNon2xxResponsesIncludeRequestIDAndEnvelope(t *testing.T) {
 	}
 	if payload.Message == "" {
 		t.Fatal("payload.Message = empty, want non-empty")
+	}
+}
+
+func TestConvergenceControlRoutesDecodeAndDispatch(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	service := &fakeConvergenceService{
+		resumedRun: core.Run{RunID: "run-2", Mode: "convergence", Status: "parked"},
+	}
+	handlers := core.NewHandlers(&core.HandlerConfig{Convergence: service})
+	engine := gin.New()
+	engine.Use(core.RequestIDMiddleware())
+	engine.Use(core.ErrorMiddleware())
+	core.RegisterRoutes(engine, handlers)
+
+	approval := contract.ApprovalDecisionRequest{
+		ProposalID:          "proposal-1",
+		Decision:            contract.ConvergenceDecisionApprove,
+		Reason:              "approved after inspection",
+		ExpectedFingerprint: "fp-1",
+		ExpectedSnapshot:    "snap-1",
+	}
+	approvalBody, err := json.Marshal(approval)
+	if err != nil {
+		t.Fatalf("marshal approval request: %v", err)
+	}
+	approvalRequest := httptest.NewRequestWithContext(
+		context.Background(),
+		http.MethodPost,
+		"/api/runs/run-1/approvals",
+		bytes.NewReader(approvalBody),
+	)
+	approvalRequest.Header.Set("Content-Type", "application/json")
+	approvalResponse := httptest.NewRecorder()
+	engine.ServeHTTP(approvalResponse, approvalRequest)
+	if approvalResponse.Code != http.StatusAccepted {
+		t.Fatalf("approval status = %d, want %d", approvalResponse.Code, http.StatusAccepted)
+	}
+	if service.approvalRunID != "run-1" || service.approvalRequest != approval {
+		t.Fatalf(
+			"approval dispatch = (%q, %#v), want (%q, %#v)",
+			service.approvalRunID,
+			service.approvalRequest,
+			"run-1",
+			approval,
+		)
+	}
+
+	resume := contract.ConvergenceResumeRequest{ExpectedCursor: "resume:8"}
+	resumeBody, err := json.Marshal(resume)
+	if err != nil {
+		t.Fatalf("marshal resume request: %v", err)
+	}
+	resumeRequest := httptest.NewRequestWithContext(
+		context.Background(),
+		http.MethodPost,
+		"/api/runs/run-1/resume",
+		bytes.NewReader(resumeBody),
+	)
+	resumeRequest.Header.Set("Content-Type", "application/json")
+	resumeResponse := httptest.NewRecorder()
+	engine.ServeHTTP(resumeResponse, resumeRequest)
+	if resumeResponse.Code != http.StatusAccepted {
+		t.Fatalf("resume status = %d, want %d", resumeResponse.Code, http.StatusAccepted)
+	}
+	if service.resumeRunID != "run-1" || service.resumeRequest != resume {
+		t.Fatalf(
+			"resume dispatch = (%q, %#v), want (%q, %#v)",
+			service.resumeRunID,
+			service.resumeRequest,
+			"run-1",
+			resume,
+		)
+	}
+	var payload contract.RunResponse
+	decodeJSON(t, resumeResponse.Body.Bytes(), &payload)
+	if payload.Run.RunID != "run-2" {
+		t.Fatalf("resume response run id = %q, want run-2", payload.Run.RunID)
+	}
+}
+
+func TestConvergenceControlRoutesReturnStableConflictEnvelopes(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	cases := []struct {
+		name      string
+		path      string
+		body      string
+		problem   *core.Problem
+		configure func(*fakeConvergenceService, error)
+		wantCode  string
+	}{
+		{
+			name: "approval stale",
+			path: "/api/runs/run-1/approvals",
+			body: `{
+				"proposal_id":"proposal-1",
+				"decision":"approve",
+				"reason":"reviewed",
+				"expected_fingerprint":"fp-stale",
+				"expected_snapshot":"snap-1"
+			}`,
+			problem: core.NewProblem(
+				http.StatusConflict,
+				convergence.CodeApprovalStale,
+				"the approval proposal or snapshot has changed",
+				nil,
+				convergence.ErrApprovalStale,
+			),
+			configure: func(service *fakeConvergenceService, err error) {
+				service.approvalErr = err
+			},
+			wantCode: convergence.CodeApprovalStale,
+		},
+		{
+			name: "resume target not parked",
+			path: "/api/runs/run-1/resume",
+			body: `{"expected_cursor":"resume:1"}`,
+			problem: core.NewProblem(
+				http.StatusConflict,
+				convergence.CodeNotParked,
+				"the convergence segment is not parked for the requested operation",
+				nil,
+				convergence.ErrNotParked,
+			),
+			configure: func(service *fakeConvergenceService, err error) {
+				service.resumeErr = err
+			},
+			wantCode: convergence.CodeNotParked,
+		},
+		{
+			name: "resume cursor stale",
+			path: "/api/runs/run-1/resume",
+			body: `{"expected_cursor":"resume:stale"}`,
+			problem: core.NewProblem(
+				http.StatusConflict,
+				convergence.CodeResumeCursorStale,
+				"the resume cursor is stale or already claimed",
+				nil,
+				convergence.ErrResumeCursorStale,
+			),
+			configure: func(service *fakeConvergenceService, err error) {
+				service.resumeErr = err
+			},
+			wantCode: convergence.CodeResumeCursorStale,
+		},
+	}
+	for _, tc := range cases {
+		t.Run("Should return "+tc.name, func(t *testing.T) {
+			t.Parallel()
+			service := &fakeConvergenceService{}
+			tc.configure(service, tc.problem)
+			handlers := core.NewHandlers(&core.HandlerConfig{Convergence: service})
+			engine := gin.New()
+			engine.Use(core.RequestIDMiddleware())
+			engine.Use(core.ErrorMiddleware())
+			core.RegisterRoutes(engine, handlers)
+
+			request := httptest.NewRequestWithContext(
+				context.Background(),
+				http.MethodPost,
+				tc.path,
+				strings.NewReader(tc.body),
+			)
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			engine.ServeHTTP(response, request)
+
+			if response.Code != http.StatusConflict {
+				t.Fatalf("status = %d, want %d", response.Code, http.StatusConflict)
+			}
+			var payload core.TransportError
+			decodeJSON(t, response.Body.Bytes(), &payload)
+			if payload.Code != tc.wantCode {
+				t.Fatalf("error code = %q, want %q", payload.Code, tc.wantCode)
+			}
+			if payload.Message != tc.problem.Message {
+				t.Fatalf("error message = %q, want %q", payload.Message, tc.problem.Message)
+			}
+		})
+	}
+}
+
+func TestConvergenceControlRoutesReturnNotFoundForUnknownRun(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	cases := []struct {
+		name      string
+		path      string
+		body      string
+		configure func(*fakeConvergenceService)
+	}{
+		{
+			name: "approval",
+			path: "/api/runs/missing/approvals",
+			body: `{
+				"proposal_id":"proposal-1",
+				"decision":"approve",
+				"reason":"reviewed",
+				"expected_fingerprint":"fp-1",
+				"expected_snapshot":"snap-1"
+			}`,
+			configure: func(service *fakeConvergenceService) {
+				service.approvalErr = globaldb.ErrRunNotFound
+			},
+		},
+		{
+			name: "resume",
+			path: "/api/runs/missing/resume",
+			body: `{"expected_cursor":"resume:1"}`,
+			configure: func(service *fakeConvergenceService) {
+				service.resumeErr = globaldb.ErrRunNotFound
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run("Should return not found for unknown "+tc.name+" run", func(t *testing.T) {
+			t.Parallel()
+			service := &fakeConvergenceService{}
+			tc.configure(service)
+			handlers := core.NewHandlers(&core.HandlerConfig{Convergence: service})
+			engine := gin.New()
+			engine.Use(core.RequestIDMiddleware())
+			engine.Use(core.ErrorMiddleware())
+			core.RegisterRoutes(engine, handlers)
+
+			request := httptest.NewRequestWithContext(
+				context.Background(),
+				http.MethodPost,
+				tc.path,
+				strings.NewReader(tc.body),
+			)
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			engine.ServeHTTP(response, request)
+
+			if response.Code != http.StatusNotFound {
+				t.Fatalf("status = %d, want %d", response.Code, http.StatusNotFound)
+			}
+			var payload core.TransportError
+			decodeJSON(t, response.Body.Bytes(), &payload)
+			if payload.Code != string(contract.CodeNotFound) {
+				t.Fatalf("error code = %q, want %q", payload.Code, contract.CodeNotFound)
+			}
+		})
 	}
 }
 
@@ -539,6 +789,43 @@ type fakeRunService struct {
 	openStream     func(context.Context, string, core.StreamCursor) (core.RunStream, error)
 	pauseRunJob    func(context.Context, string, string) (core.RunJobControlResponse, error)
 	sendRunMessage func(context.Context, string, string, core.RunJobMessageRequest) (core.RunJobControlResponse, error)
+}
+
+type fakeConvergenceService struct {
+	approvalRunID   string
+	approvalRequest contract.ApprovalDecisionRequest
+	approvalErr     error
+	resumeRunID     string
+	resumeRequest   contract.ConvergenceResumeRequest
+	resumedRun      core.Run
+	resumeErr       error
+}
+
+func (*fakeConvergenceService) ConvergenceSnapshot(
+	context.Context,
+	string,
+) (contract.ConvergenceSnapshotResponse, error) {
+	return contract.ConvergenceSnapshotResponse{}, nil
+}
+
+func (s *fakeConvergenceService) DecideConvergenceApproval(
+	_ context.Context,
+	runID string,
+	req contract.ApprovalDecisionRequest,
+) error {
+	s.approvalRunID = runID
+	s.approvalRequest = req
+	return s.approvalErr
+}
+
+func (s *fakeConvergenceService) ResumeConvergence(
+	_ context.Context,
+	runID string,
+	req contract.ConvergenceResumeRequest,
+) (core.Run, error) {
+	s.resumeRunID = runID
+	s.resumeRequest = req
+	return s.resumedRun, s.resumeErr
 }
 
 func (f *fakeRunService) List(ctx context.Context, query core.RunListQuery) ([]core.Run, error) {

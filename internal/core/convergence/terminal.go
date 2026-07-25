@@ -1,5 +1,7 @@
 package convergence
 
+import "github.com/compozy/compozy/pkg/compozy/events/kinds"
+
 // TerminalKind is the coarse terminal classification of a convergence segment.
 type TerminalKind string
 
@@ -21,7 +23,7 @@ type ParkedReason string
 
 const (
 	// ParkedApprovalRequired means a user decision is pending on a protected action.
-	ParkedApprovalRequired ParkedReason = "approval_required"
+	ParkedApprovalRequired ParkedReason = kinds.ConvergenceParkedReasonApprovalRequired
 	// ParkedWorkspaceChanged means an unexplained Git difference was detected.
 	ParkedWorkspaceChanged ParkedReason = "workspace_changed"
 	// ParkedVerificationFailed means verification attempts were exhausted.

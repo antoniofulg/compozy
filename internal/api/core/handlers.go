@@ -1455,6 +1455,48 @@ func (h *Handlers) GetConvergenceSnapshot(c *gin.Context) {
 	c.JSON(http.StatusOK, snapshot)
 }
 
+// DecideConvergenceApproval records an explicit approve or reject decision. It
+// never resumes the parked segment.
+func (h *Handlers) DecideConvergenceApproval(c *gin.Context) {
+	if h.Convergence == nil {
+		h.respondError(c, serviceUnavailableProblem("convergence service"))
+		return
+	}
+
+	var body contract.ApprovalDecisionRequest
+	if !h.bindJSON(c, "decode convergence approval request", &body) {
+		return
+	}
+	if err := h.Convergence.DecideConvergenceApproval(
+		c.Request.Context(),
+		c.Param("run_id"),
+		body,
+	); err != nil {
+		h.respondError(c, err)
+		return
+	}
+	c.JSON(http.StatusAccepted, contract.MutationAcceptedResponse{Accepted: true})
+}
+
+// ResumeConvergence claims a parked segment and returns its linked continuation.
+func (h *Handlers) ResumeConvergence(c *gin.Context) {
+	if h.Convergence == nil {
+		h.respondError(c, serviceUnavailableProblem("convergence service"))
+		return
+	}
+
+	var body contract.ConvergenceResumeRequest
+	if !h.bindJSON(c, "decode convergence resume request", &body) {
+		return
+	}
+	run, err := h.Convergence.ResumeConvergence(c.Request.Context(), c.Param("run_id"), body)
+	if err != nil {
+		h.respondError(c, err)
+		return
+	}
+	c.JSON(http.StatusAccepted, contract.RunResponse{Run: run})
+}
+
 // GetRunTranscript returns the canonical structured transcript for one run.
 func (h *Handlers) GetRunTranscript(c *gin.Context) {
 	if h.Runs == nil {

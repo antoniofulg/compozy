@@ -1,5 +1,9 @@
 package kinds
 
+// ConvergenceParkedReasonApprovalRequired is the wire value that permits a
+// post-terminal user decision on an approval-required parked segment.
+const ConvergenceParkedReasonApprovalRequired = "approval_required"
+
 // ConvergenceIdentifiers are the four canonical identifiers every convergence and
 // task-continuation event carries. They flatten into the event payload object.
 // request_id and actor_id are internal/confidential; resource_id and

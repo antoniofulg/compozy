@@ -100,11 +100,12 @@ type RunService interface {
 	SendRunJobMessage(context.Context, string, string, RunJobMessageRequest) (RunJobControlResponse, error)
 }
 
-// ConvergenceService exposes the bounded, versioned convergence snapshot read
-// model for one convergence run. It is additive to RunService so existing run
-// clients and mocks are unaffected.
+// ConvergenceService exposes the bounded convergence snapshot and the distinct
+// approval and resume controls for one convergence run.
 type ConvergenceService interface {
 	ConvergenceSnapshot(context.Context, string) (contract.ConvergenceSnapshotResponse, error)
+	DecideConvergenceApproval(context.Context, string, contract.ApprovalDecisionRequest) error
+	ResumeConvergence(context.Context, string, contract.ConvergenceResumeRequest) (Run, error)
 }
 
 // SyncService exposes explicit workflow reconciliation.

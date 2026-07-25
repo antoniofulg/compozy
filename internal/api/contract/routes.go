@@ -192,6 +192,18 @@ var RouteInventory = []RouteSpec{
 		TimeoutClass: TimeoutRead,
 	},
 	{
+		Method:       http.MethodPost,
+		Path:         "/api/runs/:run_id/approvals",
+		ResponseType: "MutationAcceptedResponse",
+		TimeoutClass: TimeoutMutate,
+	},
+	{
+		Method:       http.MethodPost,
+		Path:         "/api/runs/:run_id/resume",
+		ResponseType: "RunResponse",
+		TimeoutClass: TimeoutLongMutate,
+	},
+	{
 		Method:       http.MethodGet,
 		Path:         "/api/runs/:run_id/transcript",
 		ResponseType: "RunTranscriptResponse",
