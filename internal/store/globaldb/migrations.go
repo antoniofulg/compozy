@@ -242,6 +242,43 @@ var migrations = []migration{
 				WHERE selection_fingerprint <> '';`,
 		},
 	},
+	{
+		version: 11,
+		name:    "convergence_run_index",
+		// Additive convergence index. The convergence journal and run.db stay
+		// canonical; this table indexes only the cross-run relations, activation and
+		// resume request fingerprints, terminal outcome, and receipt projection index
+		// the daemon reconstructs from canonical state. A prior-version global.db
+		// upgrades in place; existing rows are untouched.
+		statements: []string{
+			`CREATE TABLE IF NOT EXISTS convergence_run_index (
+				run_id                 TEXT PRIMARY KEY REFERENCES runs(run_id) ON DELETE CASCADE,
+				convergence_id         TEXT NOT NULL,
+				previous_run_id        TEXT NOT NULL DEFAULT '',
+				source_run_id          TEXT NOT NULL DEFAULT '',
+				activation_fingerprint TEXT NOT NULL DEFAULT '',
+				resume_fingerprint     TEXT NOT NULL DEFAULT '',
+				terminal_outcome       TEXT NOT NULL DEFAULT '',
+				terminal_reason        TEXT NOT NULL DEFAULT '',
+				receipt_path           TEXT NOT NULL DEFAULT '',
+				receipt_source_seq     INTEGER NOT NULL DEFAULT 0,
+				updated_at             TEXT NOT NULL
+			);`,
+			`CREATE INDEX IF NOT EXISTS idx_convergence_run_index_convergence
+				ON convergence_run_index(convergence_id, run_id);`,
+			`CREATE INDEX IF NOT EXISTS idx_convergence_run_index_previous
+				ON convergence_run_index(previous_run_id)
+				WHERE previous_run_id <> '';`,
+			`CREATE INDEX IF NOT EXISTS idx_convergence_run_index_source
+				ON convergence_run_index(source_run_id)
+				WHERE source_run_id <> '';`,
+			// One active or replayable result per activation key: the global index
+			// enforces uniqueness so a duplicate activation cannot create a second run.
+			`CREATE UNIQUE INDEX IF NOT EXISTS uq_convergence_activation_fingerprint
+				ON convergence_run_index(activation_fingerprint)
+				WHERE activation_fingerprint <> '';`,
+		},
+	},
 }
 
 var migrationTableStatements = []string{

@@ -35,6 +35,31 @@ const (
 	EventKindRunRecovered          EventKind = "run.recovered"
 	EventKindRunRecoveryExhausted  EventKind = "run.recovery_exhausted"
 
+	// EventKindRunParked is the generic terminal run event consumed by existing run
+	// observers when a convergence segment parks. It is terminal, non-clean, and
+	// replayable.
+	EventKindRunParked EventKind = "run.parked"
+
+	// Convergence lifecycle events. These are operational progress events for a
+	// first-class convergence run; the public terminal is one of run.completed,
+	// run.parked, run.failed, or run.cancelled.
+	EventKindConvergencePreflightCompleted   EventKind = "convergence.preflight_completed"
+	EventKindConvergencePhaseStarted         EventKind = "convergence.phase_started"
+	EventKindConvergenceRouteSelected        EventKind = "convergence.route_selected"
+	EventKindConvergenceVerificationComplete EventKind = "convergence.verification_completed"
+	EventKindConvergenceReviewCompleted      EventKind = "convergence.review_completed"
+	EventKindConvergenceFindingChanged       EventKind = "convergence.finding_changed"
+	EventKindConvergenceBatchCompleted       EventKind = "convergence.batch_completed"
+	EventKindConvergenceProgressEvaluated    EventKind = "convergence.progress_evaluated"
+	EventKindConvergenceApprovalRequested    EventKind = "convergence.approval_requested"
+	EventKindConvergenceApprovalDecided      EventKind = "convergence.approval_decided"
+	EventKindConvergenceSegmentParked        EventKind = "convergence.segment_parked"
+	EventKindConvergenceSegmentCompleted     EventKind = "convergence.segment_completed"
+
+	// Task-run convergence continuation events.
+	EventKindTaskConvergenceRequested EventKind = "task.convergence_requested"
+	EventKindTaskConvergenceContinued EventKind = "task.convergence_continued"
+
 	// Job lifecycle events.
 	EventKindJobQueued          EventKind = "job.queued"
 	EventKindJobStarted         EventKind = "job.started"

@@ -590,7 +590,7 @@ func countActiveRunsForWorkflowAggregateTx(ctx context.Context, tx *sql.Tx, work
 		 WHERE (workflow_id = ? OR workflow_id IN (
 			SELECT id FROM workflows WHERE parent_workflow_id = ?
 		 ))
-		   AND status NOT IN ('completed', 'failed', 'canceled', 'crashed')`,
+		   AND status NOT IN ('completed', 'failed', 'canceled', 'crashed', 'parked')`,
 		strings.TrimSpace(workflowID),
 		strings.TrimSpace(workflowID),
 	).Scan(&count); err != nil {
@@ -614,7 +614,7 @@ func deleteActiveWorkflowAggregateTx(ctx context.Context, tx *sql.Tx, workflowID
 			WHERE (workflow_id = ? OR workflow_id IN (
 				SELECT id FROM workflows WHERE parent_workflow_id = ?
 			))
-			  AND status NOT IN ('completed', 'failed', 'canceled', 'crashed')
+			  AND status NOT IN ('completed', 'failed', 'canceled', 'crashed', 'parked')
 		   )`,
 		trimmedWorkflowID,
 		trimmedWorkflowID,
@@ -633,7 +633,7 @@ func deleteActiveWorkflowAggregateTx(ctx context.Context, tx *sql.Tx, workflowID
 			WHERE (workflow_id = ? OR workflow_id IN (
 				SELECT id FROM workflows WHERE parent_workflow_id = ?
 			))
-			  AND status NOT IN ('completed', 'failed', 'canceled', 'crashed')
+			  AND status NOT IN ('completed', 'failed', 'canceled', 'crashed', 'parked')
 		   )`,
 		trimmedWorkflowID,
 		trimmedWorkflowID,
@@ -864,7 +864,7 @@ func (g *GlobalDB) pruneMissingChildRowsTx(
 			   AND NOT EXISTS (
 				SELECT 1 FROM runs
 				WHERE runs.workflow_id = workflows.id
-				  AND runs.status NOT IN ('completed', 'failed', 'canceled', 'crashed')
+				  AND runs.status NOT IN ('completed', 'failed', 'canceled', 'crashed', 'parked')
 			   )`,
 			childID,
 		); deleteErr != nil {
@@ -884,7 +884,7 @@ func countActiveRunsForWorkflowTx(ctx context.Context, tx *sql.Tx, workflowID st
 		ctx,
 		`SELECT COUNT(1) FROM runs
 		 WHERE workflow_id = ?
-		   AND status NOT IN ('completed', 'failed', 'canceled', 'crashed')`,
+		   AND status NOT IN ('completed', 'failed', 'canceled', 'crashed', 'parked')`,
 		strings.TrimSpace(workflowID),
 	).Scan(&count); err != nil {
 		return 0, fmt.Errorf("globaldb: count active child runs for workflow %q: %w", workflowID, err)

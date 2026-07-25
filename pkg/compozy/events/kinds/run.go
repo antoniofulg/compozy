@@ -64,6 +64,24 @@ type RunCancelledPayload struct {
 	DurationMs  int64  `json:"duration_ms,omitempty"`
 }
 
+// RunParkedPayload describes a run segment that reached a non-clean, safe,
+// resumable terminal stop. It is the generic terminal payload existing run
+// observers consume for a parked convergence segment.
+type RunParkedPayload struct {
+	ConvergenceIdentifiers
+	// Reason is the precise parked reason (e.g. approval_required, max_rounds).
+	Reason string `json:"reason"`
+	// ResultPath is the run-relative artifact path with bounded terminal detail.
+	ResultPath string `json:"result_path"`
+	// ResumeAvailable reports whether an explicit resume may create a new segment.
+	ResumeAvailable bool `json:"resume_available"`
+	// Summary is a bounded, workspace-relative terminal projection.
+	Summary string `json:"summary"`
+	// Outcome is always parked and keeps the payload aligned with operational
+	// convergence event envelopes.
+	Outcome string `json:"outcome"`
+}
+
 // RunRecoveryStartedPayload describes the start of one recovery attempt.
 type RunRecoveryStartedPayload struct {
 	Attempt       int    `json:"attempt,omitempty"`

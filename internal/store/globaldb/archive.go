@@ -186,7 +186,7 @@ func (g *GlobalDB) GetWorkflowArchiveEligibility(
 				SELECT COUNT(1)
 				FROM runs
 				WHERE workflow_id = ?
-				  AND status NOT IN ('completed', 'failed', 'canceled', 'crashed')
+				  AND status NOT IN ('completed', 'failed', 'canceled', 'crashed', 'parked')
 			), 0)`,
 		workflow.ID,
 		workflow.ID,
@@ -294,7 +294,7 @@ func (g *GlobalDB) queryWorkflowArchiveEligibilityByIDs(
 		 	       COUNT(1) AS active
 		 	FROM runs
 		 	JOIN selected_workflow_ids selected ON selected.id = runs.workflow_id
-		 	WHERE runs.status NOT IN ('completed', 'failed', 'canceled', 'crashed')
+			WHERE runs.status NOT IN ('completed', 'failed', 'canceled', 'crashed', 'parked')
 		 	GROUP BY runs.workflow_id
 		 )
 		 SELECT workflows.id,

@@ -1529,7 +1529,7 @@ func (g *GlobalDB) countActiveRunsForWorkspace(ctx context.Context, workspaceID 
 		`SELECT COUNT(1)
 		 FROM runs
 		 WHERE workspace_id = ?
-		   AND status NOT IN ('completed', 'failed', 'canceled', 'crashed')`,
+		   AND status NOT IN ('completed', 'failed', 'canceled', 'crashed', 'parked')`,
 		strings.TrimSpace(workspaceID),
 	).Scan(&count); err != nil {
 		return 0, fmt.Errorf("globaldb: count active runs for workspace %q: %w", workspaceID, err)

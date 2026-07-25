@@ -39,4 +39,38 @@ var (
 	ErrTargetIneligible = errors.New("convergence: target ineligible")
 	// ErrActivationInvalid marks an activation request that cannot be canonicalized.
 	ErrActivationInvalid = errors.New("convergence: activation request invalid")
+	// ErrReadOnlyUnsupported marks a reviewer adapter that cannot enforce the
+	// required read-only execution boundary.
+	ErrReadOnlyUnsupported = errors.New("convergence: read-only review unsupported")
+	// ErrAlreadyActive marks an attempt to create a second active segment for the
+	// same convergence identity.
+	ErrAlreadyActive = errors.New("convergence: already active")
+	// ErrFingerprintMismatch marks a request whose durable idempotency fingerprint
+	// conflicts with the stored request.
+	ErrFingerprintMismatch = errors.New("convergence: fingerprint mismatch")
+	// ErrNotParked marks a resume target that is not a parked terminal segment.
+	ErrNotParked = errors.New("convergence: resume target not parked")
+	// ErrResumeCursorStale marks a resume cursor that has changed or was consumed.
+	ErrResumeCursorStale = errors.New("convergence: resume cursor stale")
+	// ErrApprovalStale marks a decision bound to a superseded proposal or snapshot.
+	ErrApprovalStale = errors.New("convergence: approval stale")
+	// ErrWorkspaceChanged marks a transition whose frozen workspace snapshot no
+	// longer matches the owned checkout.
+	ErrWorkspaceChanged = errors.New("convergence: workspace changed")
+	// ErrUnknownOutcome marks incomplete or untrustworthy external work that cannot
+	// authorize a successful transition.
+	ErrUnknownOutcome = errors.New("convergence: unknown outcome")
+	// ErrIntegrityFailed marks corruption or a canonical/projection invariant
+	// failure that cannot be safely reconstructed.
+	ErrIntegrityFailed = errors.New("convergence: integrity failed")
+	// ErrReviewInvalid marks a structured review result that fails the review
+	// contract: a missing identity, snapshot, explanation, outcome enum, or finding
+	// field that cannot advance evaluation.
+	ErrReviewInvalid = errors.New("convergence: review result invalid")
+	// ErrCorrectionInvalid marks a correction result missing required before/after
+	// snapshot or affected-path evidence.
+	ErrCorrectionInvalid = errors.New("convergence: correction result invalid")
+	// ErrProtectedChange marks a proposed test or verification-gate weakening that
+	// must be approved by the user before it may be applied.
+	ErrProtectedChange = errors.New("convergence: protected change requires approval")
 )

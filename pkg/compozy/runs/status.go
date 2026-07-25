@@ -17,6 +17,8 @@ func normalizeStatus(status string) string {
 		return publicRunStatusCancelled
 	case publicRunStatusCrashed:
 		return publicRunStatusCrashed
+	case publicRunStatusParked:
+		return publicRunStatusParked
 	default:
 		return strings.TrimSpace(status)
 	}
@@ -28,7 +30,11 @@ func defaultRunStatus() string {
 
 func isTerminalStatus(status string) bool {
 	switch normalizeStatus(status) {
-	case publicRunStatusCompleted, publicRunStatusFailed, publicRunStatusCancelled, publicRunStatusCrashed:
+	case publicRunStatusCompleted,
+		publicRunStatusFailed,
+		publicRunStatusCancelled,
+		publicRunStatusCrashed,
+		publicRunStatusParked:
 		return true
 	default:
 		return false

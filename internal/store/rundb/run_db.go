@@ -31,6 +31,7 @@ type RunDB struct {
 	now         func() time.Time
 	closeMu     sync.Mutex
 	integrityMu sync.Mutex
+	convergeMu  sync.Mutex
 }
 
 // HookRunRecord captures one hook audit row persisted independently of the canonical event stream.
@@ -207,6 +208,8 @@ func (r *RunDB) StoreEventBatch(ctx context.Context, items []events.Event) (retE
 	if err := r.requireContext(ctx, "store event batch"); err != nil {
 		return err
 	}
+	r.convergeMu.Lock()
+	defer r.convergeMu.Unlock()
 
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -231,7 +234,14 @@ func (r *RunDB) StoreEventBatch(ctx context.Context, items []events.Event) (retE
 	}()
 
 	for _, item := range items {
-		if err := storeProjectedEventWithStatements(ctx, stmts, item); err != nil {
+		skip, err := validateConvergenceAppend(ctx, tx, item)
+		if err != nil {
+			return err
+		}
+		if skip {
+			continue
+		}
+		if err := storeProjectedEventWithStatements(ctx, tx, stmts, item); err != nil {
 			return err
 		}
 	}
@@ -1273,6 +1283,7 @@ func storeEventWithStatement(ctx context.Context, stmt *sql.Stmt, item events.Ev
 
 func storeProjectedEventWithStatements(
 	ctx context.Context,
+	tx *sql.Tx,
 	stmts eventBatchStatements,
 	item events.Event,
 ) error {
@@ -1289,6 +1300,9 @@ func storeProjectedEventWithStatements(
 		return err
 	}
 	if err := applyArtifactSyncProjectionWithStatement(ctx, stmts.insertArtifactSyncLog, item); err != nil {
+		return err
+	}
+	if err := applyConvergenceProjection(ctx, tx, item); err != nil {
 		return err
 	}
 	return nil

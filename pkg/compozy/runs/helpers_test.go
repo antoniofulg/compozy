@@ -47,6 +47,9 @@ func TestNormalizeStatusAndTerminalStates(t *testing.T) {
 	if !isTerminalStatus(publicRunStatusCrashed) {
 		t.Fatal("expected crashed to be terminal")
 	}
+	if normalizeStatus(" PARKED ") != publicRunStatusParked || !isTerminalStatus(publicRunStatusParked) {
+		t.Fatal("expected parked to normalize as a terminal status")
+	}
 }
 
 func TestCleanWorkspaceRoot(t *testing.T) {

@@ -32,6 +32,46 @@ const (
 	CodeStreamUnavailable     ErrorCode = "stream_unavailable"
 )
 
+// Convergence stable transport error codes. They are the wire contract older and
+// newer clients match on and mirror the canonical sentinel->code table owned by
+// the pure domain (internal/core/convergence.TransportCodes). The daemon transport
+// service maps convergence domain errors onto these codes via
+// convergence.TransportCode; a cross-check test guards against drift between the
+// two lists. Adding a code here without the domain sentinel (or vice versa) fails
+// that guard, so this list stays the single transport-side source of truth.
+const (
+	CodeConvergenceConfigInvalid        ErrorCode = "convergence_config_invalid"
+	CodeConvergenceVerificationRequired ErrorCode = "convergence_verification_required"
+	CodeConvergenceReadOnlyUnsupported  ErrorCode = "convergence_read_only_unsupported"
+	CodeConvergenceTargetIneligible     ErrorCode = "convergence_target_ineligible"
+	CodeConvergenceAlreadyActive        ErrorCode = "convergence_already_active"
+	CodeConvergenceFingerprintMismatch  ErrorCode = "convergence_fingerprint_mismatch"
+	CodeConvergenceNotParked            ErrorCode = "convergence_not_parked"
+	CodeConvergenceResumeCursorStale    ErrorCode = "convergence_resume_cursor_stale"
+	CodeConvergenceApprovalStale        ErrorCode = "convergence_approval_stale"
+	CodeConvergenceWorkspaceChanged     ErrorCode = "convergence_workspace_changed"
+	CodeConvergenceUnknownOutcome       ErrorCode = "convergence_unknown_outcome"
+	CodeConvergenceIntegrityFailed      ErrorCode = "convergence_integrity_failed"
+)
+
+// ConvergenceErrorCodes lists every convergence transport code in the same stable
+// order as the domain's convergence.TransportCodes(). Compatibility and
+// error-contract tests enumerate it.
+var ConvergenceErrorCodes = []ErrorCode{
+	CodeConvergenceConfigInvalid,
+	CodeConvergenceVerificationRequired,
+	CodeConvergenceReadOnlyUnsupported,
+	CodeConvergenceTargetIneligible,
+	CodeConvergenceAlreadyActive,
+	CodeConvergenceFingerprintMismatch,
+	CodeConvergenceNotParked,
+	CodeConvergenceResumeCursorStale,
+	CodeConvergenceApprovalStale,
+	CodeConvergenceWorkspaceChanged,
+	CodeConvergenceUnknownOutcome,
+	CodeConvergenceIntegrityFailed,
+}
+
 var CanonicalErrorCodes = []ErrorCode{
 	CodeInvalidRequest,
 	CodeValidationError,
@@ -54,6 +94,18 @@ var CanonicalErrorCodes = []ErrorCode{
 	CodeWorkspacePathNeeded,
 	CodePromptRequired,
 	CodeStreamUnavailable,
+	CodeConvergenceConfigInvalid,
+	CodeConvergenceVerificationRequired,
+	CodeConvergenceReadOnlyUnsupported,
+	CodeConvergenceTargetIneligible,
+	CodeConvergenceAlreadyActive,
+	CodeConvergenceFingerprintMismatch,
+	CodeConvergenceNotParked,
+	CodeConvergenceResumeCursorStale,
+	CodeConvergenceApprovalStale,
+	CodeConvergenceWorkspaceChanged,
+	CodeConvergenceUnknownOutcome,
+	CodeConvergenceIntegrityFailed,
 }
 
 type TransportError struct {

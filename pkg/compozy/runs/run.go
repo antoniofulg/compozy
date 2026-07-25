@@ -35,6 +35,10 @@ const (
 	publicRunStatusFailed    = "failed"
 	publicRunStatusCancelled = "cancel" + "led"
 	publicRunStatusCrashed   = "crashed"
+	// publicRunStatusParked is the additive terminal status for a parked convergence
+	// segment. It is terminal and non-clean: a resumable, safe stop that is not a
+	// completed run.
+	publicRunStatusParked = "parked"
 
 	defaultRunListQueryLimit = 500
 	defaultRunEventPageLimit = 500

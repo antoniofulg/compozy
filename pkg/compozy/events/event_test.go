@@ -20,6 +20,7 @@ func TestEventLifecycleClassification(t *testing.T) {
 		wantDurable bool
 	}{
 		{name: "run completed", kind: EventKindRunCompleted, wantScope: SettlementScopeRun, wantDurable: true},
+		{name: "run parked", kind: EventKindRunParked, wantScope: SettlementScopeRun, wantDurable: true},
 		{name: "run crashed", kind: EventKindRunCrashed, wantScope: SettlementScopeRun, wantDurable: true},
 		{
 			name:        "Should classify run recovery exhausted as run-terminal",

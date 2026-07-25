@@ -45,6 +45,18 @@ func TestApplyMigrationsIsIdempotent(t *testing.T) {
 
 	requiredTables := []string{
 		"artifact_sync_log",
+		"convergence_approvals",
+		"convergence_batches",
+		"convergence_dispositions",
+		"convergence_findings",
+		"convergence_observations",
+		"convergence_phases",
+		"convergence_rounds",
+		"convergence_routes",
+		"convergence_runs",
+		"convergence_segments",
+		"convergence_verification_failures",
+		"convergence_verifications",
 		"events",
 		"hook_runs",
 		"job_state",
@@ -56,6 +68,53 @@ func TestApplyMigrationsIsIdempotent(t *testing.T) {
 		if _, ok := beforeSchema["table:"+tableName]; !ok {
 			t.Fatalf("missing required table %q in schema snapshot", tableName)
 		}
+	}
+}
+
+func TestApplyMigrationsUpgradesPriorRunDBWithoutChangingCanonicalEvents(t *testing.T) {
+	// IT-002 migration boundary: a real v3 run.db upgrades additively to the
+	// convergence schema while preserving its canonical event log.
+	t.Parallel()
+
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "prior-run", "run.db")
+	sqlDB, err := store.OpenSQLiteDatabase(ctx, path, func(ctx context.Context, db *sql.DB) error {
+		if err := store.EnsureSchema(ctx, db, migrationTableStatements); err != nil {
+			return err
+		}
+		for _, item := range migrations[:3] {
+			if err := applyMigration(ctx, db, item, time.Now); err != nil {
+				return err
+			}
+		}
+		_, err := db.ExecContext(ctx,
+			`INSERT INTO events (sequence, event_kind, payload_json, timestamp)
+			 VALUES (1, 'run.started', '{}', ?)`,
+			store.FormatTimestamp(time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC)))
+		return err
+	})
+	if err != nil {
+		t.Fatalf("create prior run.db = %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("close prior run.db = %v", err)
+	}
+
+	upgraded, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("Open(upgrade) = %v", err)
+	}
+	defer func() { _ = upgraded.Close() }()
+	stored, err := upgraded.ListEvents(ctx, 1, 0)
+	if err != nil {
+		t.Fatalf("ListEvents() = %v", err)
+	}
+	if len(stored.Events) != 1 || stored.Events[0].Kind != "run.started" {
+		t.Fatalf("preserved events = %+v", stored.Events)
+	}
+	schema := loadSchemaSnapshot(t, upgraded.db)
+	if _, ok := schema["table:convergence_runs"]; !ok {
+		t.Fatal("convergence_runs table missing after v3 upgrade")
 	}
 }
 

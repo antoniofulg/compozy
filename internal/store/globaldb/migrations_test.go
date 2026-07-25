@@ -50,6 +50,7 @@ func TestApplyMigrationsIsIdempotent(t *testing.T) {
 	requiredTables := []string{
 		"artifact_bodies",
 		"artifact_snapshots",
+		"convergence_run_index",
 		"review_issues",
 		"review_rounds",
 		"runs",
@@ -78,8 +79,8 @@ func TestApplyMigrationsAddsSelectionFingerprintV10(t *testing.T) {
 		_ = db.Close()
 	}()
 
-	if got := migrations[len(migrations)-1].version; got != 10 {
-		t.Fatalf("latest migration version = %d, want 10", got)
+	if got := migrations[len(migrations)-1].version; got != 11 {
+		t.Fatalf("latest migration version = %d, want 11", got)
 	}
 	if err := applyMigrations(context.Background(), db.db, db.now); err != nil {
 		t.Fatalf("applyMigrations(second pass): %v", err)
@@ -282,8 +283,8 @@ func TestApplyMigrationsUpgradesAppliedWorkPackageHierarchyToTaskGroups(t *testi
 	migrationRows := loadMigrationRows(t, sqlDB)
 	lastMigration := migrationRows[len(migrationRows)-1]
 	if got, want := lastMigration, (migrationRow{
-		Version:   10,
-		Name:      "runs_selection_fingerprint",
+		Version:   11,
+		Name:      "convergence_run_index",
 		AppliedAt: store.FormatTimestamp(fixedNow),
 	}); got != want {
 		t.Fatalf("last migration row = %#v, want %#v", got, want)

@@ -41,7 +41,7 @@ func (g *GlobalDB) CountActiveRuns(ctx context.Context) (int, error) {
 		ctx,
 		`SELECT COUNT(1)
 		 FROM runs
-		 WHERE status NOT IN ('completed', 'failed', 'canceled', 'crashed')`,
+		 WHERE status NOT IN ('completed', 'failed', 'canceled', 'crashed', 'parked')`,
 	).Scan(&count); err != nil {
 		return 0, fmt.Errorf("globaldb: count active runs: %w", err)
 	}
@@ -247,7 +247,7 @@ func (g *GlobalDB) listTerminalRuns(ctx context.Context) ([]Run, error) {
 		        started_at, ended_at, error_text, parent_run_id, request_id,
 		        out_of_order_requested, out_of_order_needed, selection_fingerprint
 		 FROM runs
-		 WHERE status IN ('completed', 'failed', 'canceled', 'crashed')
+		 WHERE status IN ('completed', 'failed', 'canceled', 'crashed', 'parked')
 		 ORDER BY COALESCE(ended_at, started_at) ASC, run_id ASC`,
 	)
 	if err != nil {

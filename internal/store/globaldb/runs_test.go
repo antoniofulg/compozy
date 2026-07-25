@@ -158,6 +158,15 @@ func TestCountWorkspacesAndActiveRuns(t *testing.T) {
 			StartedAt:        startedAt,
 			EndedAt:          timePtr(startedAt.Add(time.Minute)),
 		},
+		{
+			RunID:            "run-parked",
+			WorkspaceID:      workspaceB.ID,
+			Mode:             "convergence",
+			Status:           "parked",
+			PresentationMode: "stream",
+			StartedAt:        startedAt,
+			EndedAt:          timePtr(startedAt.Add(time.Minute)),
+		},
 	} {
 		if _, err := db.PutRun(context.Background(), run); err != nil {
 			t.Fatalf("PutRun(%q) error = %v", run.RunID, err)
@@ -178,6 +187,13 @@ func TestCountWorkspacesAndActiveRuns(t *testing.T) {
 	}
 	if activeRuns != 1 {
 		t.Fatalf("active run count = %d, want 1", activeRuns)
+	}
+	terminal, err := db.listTerminalRuns(context.Background())
+	if err != nil {
+		t.Fatalf("listTerminalRuns() = %v", err)
+	}
+	if findRunByID(terminal, "run-parked") == nil {
+		t.Fatal("parked run is missing from terminal retention rows")
 	}
 }
 

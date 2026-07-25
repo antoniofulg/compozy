@@ -26,6 +26,9 @@ type FrozenConfiguration struct {
 	Verification       []string
 	VerificationSource Source
 	BaseRoute          Route
+	Review             ResolvedRoute
+	Correction         map[Severity]ResolvedRoute
+	AutoCommit         bool
 	Warnings           []string
 
 	setup         ModelSetupConfig
@@ -78,11 +81,17 @@ func Freeze(input FreezeInput) (FrozenConfiguration, error) {
 		Verification:       verification,
 		VerificationSource: verificationSource,
 		BaseRoute:          input.BaseRoute,
+		AutoCommit:         input.AutoCommit,
 		setup:              setup,
 		inheritsRoute:      inherits,
 	}
 	if err := frozen.checkAuthority(input.AllowedIDEs); err != nil {
 		return FrozenConfiguration{}, err
+	}
+	frozen.Review = frozen.ReviewRoute(nil)
+	frozen.Correction = make(map[Severity]ResolvedRoute, 4)
+	for _, severity := range []Severity{SeverityCritical, SeverityHigh, SeverityMedium, SeverityLow} {
+		frozen.Correction[severity] = frozen.CorrectionRoute(severity, nil)
 	}
 	frozen.Warnings = frozen.buildWarnings(input.AutoCommit)
 	return frozen, nil

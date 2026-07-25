@@ -108,6 +108,173 @@ var migrations = []migration{
 			);`,
 		},
 	},
+	{
+		version: 4,
+		name:    "add_convergence_projections",
+		// Convergence projection tables. Canonical state stays the convergence
+		// journal + events log; these rows are rebuildable projections committed in
+		// the same transaction as their canonical event row. All are additive: a
+		// prior-version run.db upgrades in place without touching existing rows.
+		statements: []string{
+			`CREATE TABLE IF NOT EXISTS convergence_runs (
+				convergence_id   TEXT PRIMARY KEY,
+				run_id           TEXT NOT NULL DEFAULT '',
+				request_id       TEXT NOT NULL DEFAULT '',
+				workspace_id     TEXT NOT NULL DEFAULT '',
+				execution_scope  TEXT NOT NULL DEFAULT '',
+				task_group_id    TEXT NOT NULL DEFAULT '',
+				branch           TEXT NOT NULL DEFAULT '',
+				worktree         TEXT NOT NULL DEFAULT '',
+				target_snapshot  TEXT NOT NULL DEFAULT '',
+				config_fingerprint TEXT NOT NULL DEFAULT '',
+				config_json      TEXT NOT NULL DEFAULT '{}',
+				updated_at       TEXT NOT NULL
+			);`,
+			`CREATE TABLE IF NOT EXISTS convergence_segments (
+				run_id           TEXT PRIMARY KEY,
+				convergence_id   TEXT NOT NULL,
+				ordinal          INTEGER NOT NULL DEFAULT 0,
+				previous_run_id  TEXT NOT NULL DEFAULT '',
+				source_run_id    TEXT NOT NULL DEFAULT '',
+				state            TEXT NOT NULL DEFAULT 'prepared',
+				resume_cursor    TEXT NOT NULL DEFAULT '',
+				resume_claimed   INTEGER NOT NULL DEFAULT 0 CHECK (resume_claimed IN (0, 1)),
+				terminal_kind    TEXT NOT NULL DEFAULT '',
+				terminal_reason  TEXT NOT NULL DEFAULT '',
+				terminal_seq     INTEGER NOT NULL DEFAULT 0,
+				updated_at       TEXT NOT NULL
+			);`,
+			`CREATE INDEX IF NOT EXISTS idx_convergence_segments_convergence
+				ON convergence_segments(convergence_id, ordinal);`,
+			`CREATE UNIQUE INDEX IF NOT EXISTS uq_convergence_segments_ordinal
+				ON convergence_segments(convergence_id, ordinal);`,
+			`CREATE UNIQUE INDEX IF NOT EXISTS uq_convergence_segments_previous
+				ON convergence_segments(previous_run_id) WHERE previous_run_id <> '';`,
+			`CREATE TABLE IF NOT EXISTS convergence_phases (
+				phase_id       TEXT PRIMARY KEY,
+				run_id         TEXT NOT NULL,
+				phase          TEXT NOT NULL,
+				round          INTEGER NOT NULL DEFAULT 0,
+				batch_id       TEXT NOT NULL DEFAULT '',
+				attempt        INTEGER NOT NULL DEFAULT 0,
+				snapshot       TEXT NOT NULL DEFAULT '',
+				state          TEXT NOT NULL DEFAULT 'active',
+				sequence       INTEGER NOT NULL DEFAULT 0,
+				updated_at     TEXT NOT NULL
+			);`,
+			`CREATE INDEX IF NOT EXISTS idx_convergence_phases_run ON convergence_phases(run_id, sequence);`,
+			`CREATE TABLE IF NOT EXISTS convergence_routes (
+				phase_id             TEXT NOT NULL,
+				role                 TEXT NOT NULL,
+				primary_route        TEXT NOT NULL DEFAULT '',
+				selected_route       TEXT NOT NULL DEFAULT '',
+				configuration_source TEXT NOT NULL DEFAULT '',
+				fallback_reason      TEXT NOT NULL DEFAULT '',
+				updated_at           TEXT NOT NULL,
+				PRIMARY KEY (phase_id, role)
+			);`,
+			`CREATE TABLE IF NOT EXISTS convergence_rounds (
+				round_id              TEXT PRIMARY KEY,
+				run_id                TEXT NOT NULL,
+				number                INTEGER NOT NULL DEFAULT 0,
+				admitted_at           TEXT NOT NULL DEFAULT '',
+				resolved              INTEGER NOT NULL DEFAULT 0,
+				severity_decreased    INTEGER NOT NULL DEFAULT 0,
+				verification_improved INTEGER NOT NULL DEFAULT 0,
+				no_progress_count     INTEGER NOT NULL DEFAULT 0,
+				oscillation_count     INTEGER NOT NULL DEFAULT 0,
+				terminal_reason       TEXT NOT NULL DEFAULT '',
+				sequence              INTEGER NOT NULL DEFAULT 0,
+				updated_at            TEXT NOT NULL
+			);`,
+			`CREATE INDEX IF NOT EXISTS idx_convergence_rounds_run ON convergence_rounds(run_id, number);`,
+			`CREATE TABLE IF NOT EXISTS convergence_batches (
+				batch_id       TEXT PRIMARY KEY,
+				run_id         TEXT NOT NULL,
+				phase_id       TEXT NOT NULL DEFAULT '',
+				finding_fingerprints_json TEXT NOT NULL DEFAULT '[]',
+				before_snapshot TEXT NOT NULL DEFAULT '',
+				after_snapshot  TEXT NOT NULL DEFAULT '',
+				status          TEXT NOT NULL DEFAULT '',
+				affected_ref    TEXT NOT NULL DEFAULT '',
+				sequence        INTEGER NOT NULL DEFAULT 0,
+				updated_at      TEXT NOT NULL
+			);`,
+			`CREATE TABLE IF NOT EXISTS convergence_findings (
+				fingerprint    TEXT PRIMARY KEY,
+				run_id         TEXT NOT NULL,
+				state          TEXT NOT NULL DEFAULT 'actionable',
+				severity       TEXT NOT NULL DEFAULT '',
+				snapshot_seq   INTEGER NOT NULL DEFAULT 0,
+				attempts       INTEGER NOT NULL DEFAULT 0,
+				first_seq      INTEGER NOT NULL DEFAULT 0,
+				evidence_ref   TEXT NOT NULL DEFAULT '',
+				updated_at     TEXT NOT NULL
+			);`,
+			`CREATE INDEX IF NOT EXISTS idx_convergence_findings_run ON convergence_findings(run_id, first_seq);`,
+			`CREATE TABLE IF NOT EXISTS convergence_observations (
+				observation_id TEXT PRIMARY KEY,
+				run_id         TEXT NOT NULL,
+				fingerprint    TEXT NOT NULL,
+				snapshot       TEXT NOT NULL DEFAULT '',
+				snapshot_seq   INTEGER NOT NULL DEFAULT 0,
+				severity       TEXT NOT NULL DEFAULT '',
+				outcome        TEXT NOT NULL DEFAULT '',
+				review_id      TEXT NOT NULL DEFAULT '',
+				sequence       INTEGER NOT NULL DEFAULT 0,
+				recorded_at    TEXT NOT NULL
+			);`,
+			`CREATE INDEX IF NOT EXISTS idx_convergence_observations_fingerprint
+				ON convergence_observations(fingerprint, sequence);`,
+			`CREATE TABLE IF NOT EXISTS convergence_dispositions (
+				decision_id         TEXT PRIMARY KEY,
+				run_id              TEXT NOT NULL,
+				fingerprint         TEXT NOT NULL,
+				disposition         TEXT NOT NULL DEFAULT '',
+				actor_kind          TEXT NOT NULL DEFAULT '',
+				reason              TEXT NOT NULL DEFAULT '',
+				snapshot            TEXT NOT NULL DEFAULT '',
+				snapshot_seq        INTEGER NOT NULL DEFAULT 0,
+				related_fingerprint TEXT NOT NULL DEFAULT '',
+				sequence            INTEGER NOT NULL DEFAULT 0,
+				recorded_at         TEXT NOT NULL
+			);`,
+			`CREATE TABLE IF NOT EXISTS convergence_verifications (
+				verification_id     TEXT PRIMARY KEY,
+				run_id              TEXT NOT NULL,
+				phase_id            TEXT NOT NULL DEFAULT '',
+				command_fingerprint TEXT NOT NULL DEFAULT '',
+				snapshot            TEXT NOT NULL DEFAULT '',
+				exit_code           INTEGER,
+				passed              INTEGER NOT NULL DEFAULT 0,
+				attempt             INTEGER NOT NULL DEFAULT 0,
+				evidence_path       TEXT NOT NULL DEFAULT '',
+				sequence            INTEGER NOT NULL DEFAULT 0,
+				updated_at          TEXT NOT NULL
+			);`,
+			`CREATE INDEX IF NOT EXISTS idx_convergence_verifications_run
+				ON convergence_verifications(run_id, sequence);`,
+			`CREATE TABLE IF NOT EXISTS convergence_verification_failures (
+				failure_fingerprint TEXT PRIMARY KEY,
+				run_id              TEXT NOT NULL,
+				attempts            INTEGER NOT NULL DEFAULT 0,
+				signature           TEXT NOT NULL DEFAULT '',
+				updated_at          TEXT NOT NULL
+			);`,
+			`CREATE TABLE IF NOT EXISTS convergence_approvals (
+				proposal_id  TEXT PRIMARY KEY,
+				run_id       TEXT NOT NULL,
+				fingerprint  TEXT NOT NULL DEFAULT '',
+				action       TEXT NOT NULL DEFAULT '',
+				snapshot     TEXT NOT NULL DEFAULT '',
+				decision     TEXT NOT NULL DEFAULT '',
+				reason       TEXT NOT NULL DEFAULT '',
+				evidence_ref TEXT NOT NULL DEFAULT '',
+				sequence     INTEGER NOT NULL DEFAULT 0,
+				updated_at   TEXT NOT NULL
+			);`,
+		},
+	},
 }
 
 var migrationTableStatements = []string{

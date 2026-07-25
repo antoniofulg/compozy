@@ -328,7 +328,8 @@ func isTerminalRemoteRunStatus(status string) bool {
 		publicRunStatusFailed,
 		publicRunStatusCancelled,
 		daemonRunStatusCanceled,
-		publicRunStatusCrashed:
+		publicRunStatusCrashed,
+		publicRunStatusParked:
 		return true
 	default:
 		return false

@@ -6,6 +6,9 @@ import "strings"
 // so each field resolves through resume override, setup base, then the inherited
 // base execution route.
 func (f FrozenConfiguration) ReviewRoute(resume *RouteConfig) ResolvedRoute {
+	if f.Review.Role != "" {
+		return applyRouteOverride(f.Review, resume)
+	}
 	var setupBase, fallback *RouteConfig
 	if !f.inheritsRoute {
 		base := f.setup.Review.RouteConfig
@@ -19,6 +22,9 @@ func (f FrozenConfiguration) ReviewRoute(resume *RouteConfig) ResolvedRoute {
 // a batch. Each field resolves through resume override, the severity override,
 // setup base, then the inherited base execution route.
 func (f FrozenConfiguration) CorrectionRoute(highest Severity, resume *RouteConfig) ResolvedRoute {
+	if route, ok := f.Correction[highest]; ok {
+		return applyRouteOverride(route, resume)
+	}
 	var setupBase, severity, fallback *RouteConfig
 	if !f.inheritsRoute {
 		base := f.setup.Correction.RouteConfig
@@ -29,6 +35,26 @@ func (f FrozenConfiguration) CorrectionRoute(highest Severity, resume *RouteConf
 		}
 	}
 	return f.buildRoute(RoleCorrection, resume, severity, setupBase, fallback)
+}
+
+func applyRouteOverride(base ResolvedRoute, override *RouteConfig) ResolvedRoute {
+	if override == nil {
+		return base
+	}
+	result := base
+	if override.IDE != nil && strings.TrimSpace(*override.IDE) != "" {
+		result.Primary.IDE = strings.TrimSpace(*override.IDE)
+		result.Sources.IDE = SourceResumeOverride
+	}
+	if override.Model != nil && strings.TrimSpace(*override.Model) != "" {
+		result.Primary.Model = strings.TrimSpace(*override.Model)
+		result.Sources.Model = SourceResumeOverride
+	}
+	if override.ReasoningEffort != nil && strings.TrimSpace(*override.ReasoningEffort) != "" {
+		result.Primary.ReasoningEffort = strings.TrimSpace(*override.ReasoningEffort)
+		result.Sources.ReasoningEffort = SourceResumeOverride
+	}
+	return result
 }
 
 func (f FrozenConfiguration) buildRoute(

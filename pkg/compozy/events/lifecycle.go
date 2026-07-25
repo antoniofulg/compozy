@@ -21,6 +21,7 @@ func SettlementScopeForKind(kind EventKind) SettlementScope {
 		EventKindRunCompleted,
 		EventKindRunFailed,
 		EventKindRunCancelled,
+		EventKindRunParked,
 		EventKindRunRecoveryExhausted:
 		return SettlementScopeRun
 	case EventKindTaskRunMultipleQueueCompleted,

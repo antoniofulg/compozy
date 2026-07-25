@@ -111,6 +111,21 @@ Payload type: `kinds.RunRecoveryExhaustedPayload`
 - `error`: recovery failure or rejection reason
 - `result_path`: path to the terminal `result.json`
 
+### `run.parked`
+
+Payload type: `kinds.RunParkedPayload`
+
+Generic terminal run event published when a convergence segment parks. It is a
+non-clean, replayable terminal state that existing run observers consume. Only
+an explicit resume may create a new segment; the parked segment stays immutable.
+
+- `reason`: precise parked reason (for example `approval_required`, `max_rounds`)
+- `result_path`: run-relative artifact path with bounded terminal detail
+- `resume_available`: whether an explicit resume may create a new segment
+- `summary`: bounded, workspace-relative terminal projection
+- `request_id`, `actor_id`, `resource_id`, `correlation_id`
+- `outcome`: `parked`
+
 ## Job Events
 
 ### `job.queued`
@@ -1039,6 +1054,132 @@ Payload type: `kinds.ShutdownTerminatedPayload`
 - `requested_at`
 - `deadline_at`
 - `forced`
+
+## Convergence Events
+
+First-class convergence runs emit operational convergence events. Every event
+carries the four canonical identifiers `request_id`, `actor_id`, `resource_id`,
+and `correlation_id`. The public terminal of a convergence segment is one of
+`run.completed` (clean), `run.parked`, `run.failed`, or `run.cancelled`. No
+convergence event carries credentials, tokens, environment values, full prompts
+or transcripts, unrestricted absolute paths, or unredacted raw command output.
+Delivery is at-least-once to live observers and exactly ordered per run in the
+durable journal; consumers deduplicate by `(run_id, seq)`.
+
+### `task.convergence_requested`
+
+Payload type: `kinds.TaskConvergenceRequestedPayload`
+
+- `request_id`, `actor_id`, `resource_id`, `correlation_id`
+- `activation_fingerprint`: daemon-canonicalized activation key
+- `profile`: frozen convergence profile
+- `model_setup`: frozen model setup
+- `outcome`: one of `accepted`, `replayed`, `rejected`, `stale`
+
+### `task.convergence_continued`
+
+Payload type: `kinds.TaskConvergenceContinuedPayload`
+
+- `request_id`, `actor_id`, `resource_id`, `correlation_id`
+- `convergence_run_id`: durable child run ID (empty when `not_started`)
+- `source_snapshot`: Git snapshot of the settled task run
+- `outcome`: one of `created`, `replayed`, `not_started`
+
+### `convergence.preflight_completed`
+
+Payload type: `kinds.ConvergencePreflightCompletedPayload`
+
+- `request_id`, `actor_id`, `resource_id`, `correlation_id`
+- `target_snapshot`, `config_fingerprint`, `route_summary`, `warnings`
+- `outcome`: one of `accepted`, `rejected`, `replayed`, `stale`
+
+### `convergence.phase_started`
+
+Payload type: `kinds.ConvergencePhaseStartedPayload`
+
+- `request_id`, `actor_id`, `resource_id`, `correlation_id`
+- `phase`, `round`, `batch_id`, `attempt`, `snapshot`
+- `outcome`: one of `started`, `replayed`, `rejected`, `stale`
+
+### `convergence.route_selected`
+
+Payload type: `kinds.ConvergenceRouteSelectedPayload`
+
+- `request_id`, `actor_id`, `resource_id`, `correlation_id`
+- `role`, `primary`, `selected`, `configuration_source`, `fallback_reason`
+- `outcome`: one of `primary`, `fallback`, `unavailable`, `replayed`
+
+### `convergence.verification_completed`
+
+Payload type: `kinds.ConvergenceVerificationCompletedPayload`
+
+- `request_id`, `actor_id`, `resource_id`, `correlation_id`
+- `command_fingerprint`, `snapshot`, `exit_code`, `evidence_path`
+- `outcome`: one of `passed`, `failed`, `cancelled`, `incomplete`, `unknown`
+
+### `convergence.review_completed`
+
+Payload type: `kinds.ConvergenceReviewCompletedPayload`
+
+- `request_id`, `actor_id`, `resource_id`, `correlation_id`
+- `snapshot`, `finding_count`, `artifact_path`, `read_only_enforced`
+- `outcome`: one of `clean`, `findings`, `invalid`, `cancelled`, `incomplete`, `replayed`
+
+### `convergence.finding_changed`
+
+Payload type: `kinds.ConvergenceFindingChangedPayload`
+
+- `request_id`, `actor_id`, `resource_id`, `correlation_id`
+- `state`, `severity`, `snapshot`, `evidence_ref`, `disposition_reason`
+- `outcome`: one of `created`, `updated`, `resolved`, `invalid`, `duplicate`, `waived`, `replayed`, `stale`
+
+### `convergence.batch_completed`
+
+Payload type: `kinds.ConvergenceBatchCompletedPayload`
+
+- `request_id`, `actor_id`, `resource_id`, `correlation_id`
+- `finding_fingerprints`, `before_snapshot`, `after_snapshot`, `affected_paths_ref`
+- `outcome`: one of `changed`, `no_change`, `cancelled`, `incomplete`, `unknown`, `replayed`
+
+### `convergence.progress_evaluated`
+
+Payload type: `kinds.ConvergenceProgressEvaluatedPayload`
+
+- `request_id`, `actor_id`, `resource_id`, `correlation_id`
+- `resolved`, `severity_decreased`, `verification_improved`, `no_progress_count`, `oscillation_count`
+- `outcome`: one of `progress`, `no_progress`, `oscillation`, `replayed`
+
+### `convergence.approval_requested`
+
+Payload type: `kinds.ConvergenceApprovalRequestedPayload`
+
+- `request_id`, `actor_id`, `resource_id`, `correlation_id`
+- `proposal_fingerprint`, `snapshot`, `action`, `evidence_ref`
+- `outcome`: one of `pending`, `replayed`, `rejected`, `stale`
+
+### `convergence.approval_decided`
+
+Payload type: `kinds.ConvergenceApprovalDecidedPayload`
+
+- `request_id`, `actor_id`, `resource_id`, `correlation_id`
+- `proposal_fingerprint`, `snapshot`, `decision`, `reason`
+- `outcome`: one of `approved`, `rejected`, `replayed`, `stale`, `denied`
+
+### `convergence.segment_parked`
+
+Payload type: `kinds.ConvergenceSegmentParkedPayload`
+
+- `request_id`, `actor_id`, `resource_id`, `correlation_id`
+- `reason`, `snapshot`, `unresolved_count`, `receipt_path`, `resume_available`
+- `outcome`: one of `parked`, `replayed`
+
+### `convergence.segment_completed`
+
+Payload type: `kinds.ConvergenceSegmentCompletedPayload`
+
+- `request_id`, `actor_id`, `resource_id`, `correlation_id`
+- `snapshot`, `verification_id`, `review_id`, `receipt_path`
+- `outcome`: one of `clean`, `replayed`
 
 ## Event Streaming (CLI)
 

@@ -17,6 +17,7 @@ import (
 
 	"github.com/compozy/compozy/internal/store/rundb"
 	"github.com/compozy/compozy/pkg/compozy/events"
+	"github.com/compozy/compozy/pkg/compozy/events/kinds"
 )
 
 var errPartialEventLine = errors.New("runs: partial final event line")
@@ -63,6 +64,127 @@ func TestJournalAssignsGapFreeSequencesAndPublishesMatchingBusEvents(t *testing.
 	}
 	if _, err := os.Stat(eventsPath); err != nil {
 		t.Fatalf("expected events file to exist: %v", err)
+	}
+}
+
+func TestJournalCommitsConvergenceProjectionBeforeJSONLAndLive(t *testing.T) {
+	// IT-002 journal boundary: the shared StoreEventBatch transaction commits the
+	// convergence event and projection before JSONL advancement and live delivery.
+	t.Parallel()
+
+	ctx := context.Background()
+	workspaceRoot := t.TempDir()
+	runID := "journal-convergence"
+	prepareRunLayout(t, workspaceRoot, runID)
+	bus := events.New[events.Event](4)
+	_, updates, unsubscribe := bus.Subscribe()
+	defer unsubscribe()
+	journal, _ := openTestJournal(t, workspaceRoot, runID, bus, 4, openOptions{
+		batchSize:     1,
+		flushInterval: time.Hour,
+	})
+
+	event := testJournalEvent(runID, events.EventKindConvergencePreflightCompleted, 1)
+	event.Payload = mustJournalPayload(t, kinds.ConvergencePreflightCompletedPayload{
+		ConvergenceIdentifiers: kinds.ConvergenceIdentifiers{
+			RequestID:     "request-1",
+			ActorID:       "actor-1",
+			ResourceID:    "cvg-1",
+			CorrelationID: runID,
+		},
+		TargetSnapshot:    "sha-1",
+		ConfigFingerprint: "config-fp",
+		RouteSummary:      "review=claude",
+		Warnings:          []string{},
+		Outcome:           "accepted",
+	})
+	if _, err := journal.SubmitWithSeq(ctx, event); err != nil {
+		t.Fatalf("SubmitWithSeq() = %v", err)
+	}
+	published := collectBusEvents(t, updates, 1, time.Second)
+	if len(published) != 1 {
+		t.Fatalf("published events = %d, want 1", len(published))
+	}
+	store, err := rundb.Open(ctx, journal.DBPath())
+	if err != nil {
+		t.Fatalf("rundb.Open() = %v", err)
+	}
+	segment, err := store.ConvergenceSegment(ctx, runID)
+	if err != nil {
+		t.Fatalf("ConvergenceSegment() after live delivery = %v", err)
+	}
+	if segment.ConvergenceID != "cvg-1" {
+		t.Fatalf("segment projection = %+v", segment)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("run store Close() = %v", err)
+	}
+	if err := journal.Close(ctx); err != nil {
+		t.Fatalf("journal Close() = %v", err)
+	}
+	replayed := replayRunEvents(t, workspaceRoot, runID, 0)
+	if len(replayed) != 1 || replayed[0].Seq != published[0].Seq {
+		t.Fatalf("JSONL replay = %+v, published = %+v", replayed, published)
+	}
+}
+
+func TestJournalCanonicalFailurePublishesAndAdvancesNothing(t *testing.T) {
+	// IT-005: a rejected canonical transaction leaves run.db, JSONL, and the live
+	// bus empty.
+	t.Parallel()
+
+	ctx := context.Background()
+	workspaceRoot := t.TempDir()
+	runID := "journal-convergence-failure"
+	prepareRunLayout(t, workspaceRoot, runID)
+	bus := events.New[events.Event](4)
+	_, updates, unsubscribe := bus.Subscribe()
+	defer unsubscribe()
+	journal, _ := openTestJournal(t, workspaceRoot, runID, bus, 4, openOptions{
+		batchSize:     1,
+		flushInterval: time.Hour,
+	})
+
+	event := testJournalEvent(runID, events.EventKindConvergenceRouteSelected, 1)
+	event.Payload = mustJournalPayload(t, kinds.ConvergenceRouteSelectedPayload{
+		ConvergenceIdentifiers: kinds.ConvergenceIdentifiers{
+			RequestID:     "request-1",
+			ActorID:       "actor-1",
+			ResourceID:    "missing-phase",
+			CorrelationID: "cvg-1",
+		},
+		Role:                "review",
+		Primary:             "claude/reviewer",
+		Selected:            "claude/reviewer",
+		ConfigurationSource: "setup-base",
+		Outcome:             "primary",
+	})
+	if _, err := journal.SubmitWithSeq(ctx, event); err == nil {
+		t.Fatal("SubmitWithSeq() error = nil")
+	}
+	select {
+	case published := <-updates:
+		t.Fatalf("published rejected event: %+v", published)
+	case <-time.After(50 * time.Millisecond):
+	}
+	if err := journal.Close(ctx); err == nil {
+		t.Fatal("journal Close() error = nil")
+	}
+	replayed := replayRunEvents(t, workspaceRoot, runID, 0)
+	if len(replayed) != 0 {
+		t.Fatalf("JSONL replay = %+v, want empty", replayed)
+	}
+	store, err := rundb.Open(ctx, journal.DBPath())
+	if err != nil {
+		t.Fatalf("rundb.Open() = %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	stored, err := store.ListEvents(ctx, 0, 0)
+	if err != nil {
+		t.Fatalf("ListEvents() = %v", err)
+	}
+	if len(stored.Events) != 0 {
+		t.Fatalf("run.db events = %+v, want empty", stored.Events)
 	}
 }
 
@@ -905,4 +1027,13 @@ func testJournalEvent(runID string, kind events.EventKind, index int) events.Eve
 		Kind:          kind,
 		Payload:       json.RawMessage(`{"index":1}`),
 	}
+}
+
+func mustJournalPayload(t *testing.T, payload any) json.RawMessage {
+	t.Helper()
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal journal payload = %v", err)
+	}
+	return raw
 }

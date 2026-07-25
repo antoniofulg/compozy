@@ -9,14 +9,19 @@ const (
 	runStatusFailed    = "failed"
 	runStatusCanceled  = "canceled"
 	runStatusCrashed   = "crashed"
+	runStatusParked    = "parked"
 )
 
 func normalizeRunStatus(status string) string {
 	normalized := strings.ToLower(strings.TrimSpace(status))
-	if normalized == "canceled" {
+	switch normalized {
+	case "canceled":
 		return runStatusCanceled
+	case "parked":
+		return runStatusParked
+	default:
+		return normalized
 	}
-	return normalized
 }
 
 func normalizeRunStatusFilters(status string, statuses []string) []string {
